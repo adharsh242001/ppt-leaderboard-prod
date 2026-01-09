@@ -11,22 +11,26 @@ const AVG_COL = "Avg";
 
 // Local photos mapped by *exact* Name from the sheet
 const PHOTO_BY_NAME: Record<string, string> = {
-  "Midhuna": "/photos/Midhuna.jpg",
-  "Aswanth": "/photos/Aswanth.jpg",
-  "Abin Sheen": "/photos/AbinSheen.jpg",
-  "Rahul": "/photos/Rahul.jpg",
-  "Aswathi": "/photos/Aswathi.jpg",
-  "Jishnu": "/photos/Jishnu.jpg",
-  "Hameed": "/photos/Hameed.jpg",
-  "Deepak": "/photos/Deepak.jpg",
+  "Abdu": "/photos/Abdu.jpg",
+  "Amal": "/photos/Amal.jpg",
   "Anugrah": "/photos/Anugrah.jpg",
-  "Arun": "/photos/Arun.jpg",
-  "Gautham": "/photos/Gautham.jpg",
-  "Sanjay": "/photos/Sanjay.jpg",
-  "Muhsin": "/photos/Muhsin.jpg",
+  "Archana": "/photos/Archana.jpg",
+  "Jishnu": "/photos/Jishnu.jpg",
+  "Midhuna": "/photos/Midhuna.jpg",
   "Nidheesh": "/photos/Nidheesh.jpg",
-  "Asha": "/photos/Asha.jpg",
+  "Rahul": "/photos/Rahul.jpg",
+  "Sooraj": "/photos/Sooraj.jpg",
+  "Akash": "/photos/Akash.jpg",
+  "Aneesh": "/photos/Aneesh.jpg",
+  "Arathi": "/photos/Arathi.jpg",
+  "Jeena": "/photos/Jeena.jpg",
+  "Midhun": "/photos/Midhun.jpg",
+  "Muhsin": "/photos/Muhsin.jpg",
+  "Nikhil": "/photos/Nikhil.jpg",
+  "Ranju": "/photos/Ranju.jpg",
+  "Sreelakshmi": "/photos/Sreelakshmi.jpg",
 };
+
 
 // ---- Floating Background Elements ----
 function BackgroundElements() {
