@@ -161,7 +161,7 @@ function Header({ title, logoSrc, lastUpdated }: { title: string; logoSrc?: stri
               <img
                 src={logoSrc}
                 alt="Logo"
-                className="h-12 w-12 rounded-xl object-cover shadow-md"
+                className="h-12 w-18 rounded-xl object-cover shadow-md"
               />
             )}
             <div>
