@@ -104,7 +104,38 @@ export default async function SessionPage({
                   key={participant.participantId}
                   className="rounded-[1.5rem] border border-[rgba(255,255,255,0.05)] bg-white/[0.03] px-5 py-4 text-lg text-white"
                 >
-                  {participant.displayOrder}. {participant.name}
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      {participant.displayOrder}. {participant.name}
+                    </div>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                      <form
+                        action={`/admin/sessions/${session.id}/participants/${participant.participantId}/photo`}
+                        method="post"
+                        encType="multipart/form-data"
+                        className="flex flex-col gap-3 sm:flex-row sm:items-center"
+                      >
+                        <input
+                          type="file"
+                          name="photo"
+                          accept=".jpg,.jpeg,.png,.webp,.gif,.avif"
+                          className="max-w-xs rounded-xl border border-[var(--line)] bg-white/5 px-3 py-2 text-sm text-[var(--ink-soft)]"
+                          required
+                        />
+                        <button className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">
+                          Upload photo
+                        </button>
+                      </form>
+                      <form
+                        action={`/admin/sessions/${session.id}/participants/${participant.participantId}/delete`}
+                        method="post"
+                      >
+                        <button className="rounded-full border border-[rgba(255,120,120,0.28)] bg-[rgba(255,70,70,0.1)] px-4 py-2 text-sm font-semibold text-[#ffc0c0] transition hover:bg-[rgba(255,70,70,0.16)]">
+                          Remove
+                        </button>
+                      </form>
+                    </div>
+                  </div>
                 </div>
               ))}
               {session.participants.length === 0 ? (

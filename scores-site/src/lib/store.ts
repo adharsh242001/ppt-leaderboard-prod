@@ -152,6 +152,22 @@ export async function getSessionById(
   return sessions.find((session) => session.id === sessionId) ?? null;
 }
 
+export async function getParticipantFromSession(
+  sessionId: string,
+  participantId: string
+): Promise<SessionParticipantView | null> {
+  const session = await getSessionById(sessionId);
+  if (!session) {
+    return null;
+  }
+
+  return (
+    session.participants.find(
+      (participant) => participant.participantId === participantId
+    ) ?? null
+  );
+}
+
 export async function getSessionBySlug(
   slug: string
 ): Promise<SessionWithParticipants | null> {
@@ -262,6 +278,43 @@ export async function addParticipantToSession(sessionId: string, name: string) {
     createdAt: new Date().toISOString(),
   });
 
+  session.updatedAt = new Date().toISOString();
+  await writeStore(store);
+}
+
+export async function removeParticipantFromSession(
+  sessionId: string,
+  participantId: string
+) {
+  const store = await readStore();
+  const session = store.sessions.find((entry) => entry.id === sessionId);
+
+  if (!session) {
+    throw new Error("Session not found.");
+  }
+
+  const participant = store.sessionParticipants.find(
+    (entry) => entry.id === participantId && entry.sessionId === sessionId
+  );
+
+  if (!participant) {
+    throw new Error("Participant not found.");
+  }
+
+  store.sessionParticipants = store.sessionParticipants
+    .filter((entry) => entry.id !== participantId)
+    .map((entry) => {
+      if (entry.sessionId !== sessionId || entry.displayOrder <= participant.displayOrder) {
+        return entry;
+      }
+
+      return {
+        ...entry,
+        displayOrder: entry.displayOrder - 1,
+      };
+    });
+
+  store.votes = store.votes.filter((vote) => vote.participantId !== participantId);
   session.updatedAt = new Date().toISOString();
   await writeStore(store);
 }
