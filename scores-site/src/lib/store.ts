@@ -57,6 +57,13 @@ export type SessionWithParticipants = SessionRecord & {
   voteCount: number;
 };
 
+export type LeaderboardRow = {
+  name: string;
+  sum: string;
+  count: string;
+  avg: string;
+};
+
 const STORE_DIR = path.join(process.cwd(), "data");
 const STORE_FILE = path.join(STORE_DIR, "app-data.json");
 
@@ -367,6 +374,54 @@ export async function getGlobalLeaderboard() {
       sum: entry.sum.toString(),
       count: entry.count.toString(),
       avg: (entry.sum / entry.count).toFixed(2),
+    }))
+    .sort((left, right) => Number.parseFloat(right.sum) - Number.parseFloat(left.sum));
+}
+
+export async function getSessionLeaderboard(sessionId: string): Promise<LeaderboardRow[]> {
+  const store = await readStore();
+  const session = store.sessions.find((entry) => entry.id === sessionId);
+
+  if (!session) {
+    throw new Error("Session not found.");
+  }
+
+  const aggregates = new Map<
+    string,
+    {
+      name: string;
+      sum: number;
+      count: number;
+    }
+  >();
+
+  for (const vote of store.votes) {
+    if (vote.sessionId !== session.id) {
+      continue;
+    }
+
+    const person = store.people.find((entry) => entry.id === vote.personId);
+    if (!person) {
+      continue;
+    }
+
+    const current = aggregates.get(vote.personId) ?? {
+      name: person.name,
+      sum: 0,
+      count: 0,
+    };
+
+    current.sum += vote.score;
+    current.count += 1;
+    aggregates.set(vote.personId, current);
+  }
+
+  return [...aggregates.values()]
+    .map((entry) => ({
+      name: entry.name,
+      sum: entry.sum.toString(),
+      count: entry.count.toString(),
+      avg: entry.count ? (entry.sum / entry.count).toFixed(2) : "0.00",
     }))
     .sort((left, right) => Number.parseFloat(right.sum) - Number.parseFloat(left.sum));
 }

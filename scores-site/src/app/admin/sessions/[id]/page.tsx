@@ -71,6 +71,12 @@ export default async function SessionPage({
                   Close voting
                 </button>
               </form>
+              <Link
+                href={`/admin/results/${session.id}`}
+                className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-sm font-semibold text-white"
+              >
+                View results
+              </Link>
             </div>
           </div>
 

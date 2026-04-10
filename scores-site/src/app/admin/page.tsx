@@ -17,11 +17,19 @@ export default async function AdminPage() {
               Session control
             </h1>
           </div>
-          <form action="/logout" method="post">
-            <button className="rounded-full border border-[var(--line)] bg-white/5 px-5 py-3 text-sm font-semibold text-[var(--ink-soft)] transition hover:bg-white/10">
-              Log out
-            </button>
-          </form>
+          <div className="flex gap-3">
+            <Link
+              href="/admin/history"
+              className="rounded-full border border-[var(--line)] bg-white/5 px-5 py-3 text-sm font-semibold text-[var(--ink-soft)] transition hover:bg-white/10"
+            >
+              History
+            </Link>
+            <form action="/logout" method="post">
+              <button className="rounded-full border border-[var(--line)] bg-white/5 px-5 py-3 text-sm font-semibold text-[var(--ink-soft)] transition hover:bg-white/10">
+                Log out
+              </button>
+            </form>
+          </div>
         </div>
 
         <div className="glass-panel-strong rounded-[2rem] p-6">
@@ -123,6 +131,12 @@ export default async function AdminPage() {
                         className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/10"
                       >
                         Manage
+                      </Link>
+                      <Link
+                        href={`/admin/results/${session.id}`}
+                        className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/10"
+                      >
+                        Results
                       </Link>
                     </div>
                   </div>
