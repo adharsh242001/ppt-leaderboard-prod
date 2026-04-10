@@ -1,49 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
+import { SessionStatus as PrismaSessionStatus, Prisma } from "@prisma/client";
+import { prisma } from "@/lib/db";
+import { normalizeParticipantName } from "@/lib/photoMatching";
 
 export type SessionStatus = "draft" | "live" | "closed";
-
-export type PersonRecord = {
-  id: string;
-  name: string;
-  createdAt: string;
-};
-
-export type SessionRecord = {
-  id: string;
-  title: string;
-  slug: string;
-  status: SessionStatus;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type SessionParticipantRecord = {
-  id: string;
-  sessionId: string;
-  personId: string;
-  displayOrder: number;
-  createdAt: string;
-};
-
-export type VoteRecord = {
-  id: string;
-  sessionId: string;
-  participantId: string;
-  personId: string;
-  score: number;
-  voterToken: string;
-  voterFingerprint?: string;
-  createdAt: string;
-};
-
-type AppStore = {
-  people: PersonRecord[];
-  sessions: SessionRecord[];
-  sessionParticipants: SessionParticipantRecord[];
-  votes: VoteRecord[];
-};
 
 export type SessionParticipantView = {
   participantId: string;
@@ -52,7 +12,13 @@ export type SessionParticipantView = {
   displayOrder: number;
 };
 
-export type SessionWithParticipants = SessionRecord & {
+export type SessionWithParticipants = {
+  id: string;
+  title: string;
+  slug: string;
+  status: SessionStatus;
+  createdAt: string;
+  updatedAt: string;
   participants: SessionParticipantView[];
   voteCount: number;
 };
@@ -64,36 +30,23 @@ export type LeaderboardRow = {
   avg: string;
 };
 
-const STORE_DIR = path.join(process.cwd(), "data");
-const STORE_FILE = path.join(STORE_DIR, "app-data.json");
-
-const EMPTY_STORE: AppStore = {
-  people: [],
-  sessions: [],
-  sessionParticipants: [],
-  votes: [],
-};
-
-async function ensureStoreFile() {
-  await mkdir(STORE_DIR, { recursive: true });
-
-  try {
-    await readFile(STORE_FILE, "utf8");
-  } catch {
-    await writeFile(STORE_FILE, JSON.stringify(EMPTY_STORE, null, 2), "utf8");
-  }
-}
-
-async function readStore(): Promise<AppStore> {
-  await ensureStoreFile();
-  const raw = await readFile(STORE_FILE, "utf8");
-  return JSON.parse(raw) as AppStore;
-}
-
-async function writeStore(store: AppStore) {
-  await ensureStoreFile();
-  await writeFile(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
-}
+type SessionWithGraph = Prisma.SessionGetPayload<{
+  include: {
+    participants: {
+      orderBy: {
+        displayOrder: "asc";
+      };
+      include: {
+        person: true;
+      };
+    };
+    _count: {
+      select: {
+        votes: true;
+      };
+    };
+  };
+}>;
 
 function slugify(value: string): string {
   return value
@@ -103,12 +56,17 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-async function getUniqueSessionSlug(store: AppStore, title: string) {
+async function getUniqueSessionSlug(title: string) {
   const base = slugify(title) || "session";
   let candidate = base;
   let counter = 2;
 
-  while (store.sessions.some((session) => session.slug === candidate)) {
+  while (
+    await prisma.session.findUnique({
+      where: { slug: candidate },
+      select: { id: true },
+    })
+  ) {
     candidate = `${base}-${counter}`;
     counter += 1;
   }
@@ -116,63 +74,181 @@ async function getUniqueSessionSlug(store: AppStore, title: string) {
   return candidate;
 }
 
+function mapSession(session: SessionWithGraph): SessionWithParticipants {
+  return {
+    id: session.id,
+    title: session.title,
+    slug: session.slug,
+    status: session.status,
+    createdAt: session.createdAt.toISOString(),
+    updatedAt: session.updatedAt.toISOString(),
+    participants: session.participants.map((participant) => ({
+      participantId: participant.id,
+      personId: participant.personId,
+      name: participant.person.name,
+      displayOrder: participant.displayOrder,
+    })),
+    voteCount: session._count.votes,
+  };
+}
+
+async function getOrCreatePerson(
+  tx: Prisma.TransactionClient,
+  name: string
+) {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error("Participant name is required.");
+  }
+
+  const normalizedName = normalizeParticipantName(trimmed);
+  if (!normalizedName) {
+    throw new Error("Participant name is required.");
+  }
+
+  const existing = await tx.person.findUnique({
+    where: {
+      normalizedName,
+    },
+  });
+
+  if (existing) {
+    if (existing.name !== trimmed) {
+      return tx.person.update({
+        where: { id: existing.id },
+        data: { name: trimmed },
+      });
+    }
+
+    return existing;
+  }
+
+  return tx.person.create({
+    data: {
+      name: trimmed,
+      normalizedName,
+    },
+  });
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2002"
+  );
+}
+
+async function loadSessionWithParticipantsById(sessionId: string) {
+  return prisma.session.findUnique({
+    where: {
+      id: sessionId,
+    },
+    include: {
+      participants: {
+        orderBy: {
+          displayOrder: "asc",
+        },
+        include: {
+          person: true,
+        },
+      },
+      _count: {
+        select: {
+          votes: true,
+        },
+      },
+    },
+  });
+}
+
+async function loadSessionWithParticipantsBySlug(slug: string) {
+  return prisma.session.findUnique({
+    where: {
+      slug,
+    },
+    include: {
+      participants: {
+        orderBy: {
+          displayOrder: "asc",
+        },
+        include: {
+          person: true,
+        },
+      },
+      _count: {
+        select: {
+          votes: true,
+        },
+      },
+    },
+  });
+}
+
 export async function listSessions(): Promise<SessionWithParticipants[]> {
-  const store = await readStore();
+  const sessions = await prisma.session.findMany({
+    orderBy: {
+      createdAt: "desc",
+    },
+    include: {
+      participants: {
+        orderBy: {
+          displayOrder: "asc",
+        },
+        include: {
+          person: true,
+        },
+      },
+      _count: {
+        select: {
+          votes: true,
+        },
+      },
+    },
+  });
 
-  return store.sessions
-    .map((session) => {
-      const participants = store.sessionParticipants
-        .filter((participant) => participant.sessionId === session.id)
-        .sort((left, right) => left.displayOrder - right.displayOrder)
-        .map((participant) => {
-          const person = store.people.find((entry) => entry.id === participant.personId);
-          return {
-            participantId: participant.id,
-            personId: participant.personId,
-            name: person?.name ?? "Unknown",
-            displayOrder: participant.displayOrder,
-          };
-        });
-
-      const voteCount = store.votes.filter((vote) => vote.sessionId === session.id).length;
-
-      return {
-        ...session,
-        participants,
-        voteCount,
-      };
-    })
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  return sessions.map(mapSession);
 }
 
 export async function getSessionById(
   sessionId: string
 ): Promise<SessionWithParticipants | null> {
-  const sessions = await listSessions();
-  return sessions.find((session) => session.id === sessionId) ?? null;
+  const session = await loadSessionWithParticipantsById(sessionId);
+  return session ? mapSession(session) : null;
 }
 
 export async function getParticipantFromSession(
   sessionId: string,
   participantId: string
 ): Promise<SessionParticipantView | null> {
-  const session = await getSessionById(sessionId);
-  if (!session) {
+  const participant = await prisma.sessionParticipant.findFirst({
+    where: {
+      id: participantId,
+      sessionId,
+    },
+    include: {
+      person: true,
+    },
+  });
+
+  if (!participant) {
     return null;
   }
 
-  return (
-    session.participants.find(
-      (participant) => participant.participantId === participantId
-    ) ?? null
-  );
+  return {
+    participantId: participant.id,
+    personId: participant.personId,
+    name: participant.person.name,
+    displayOrder: participant.displayOrder,
+  };
 }
 
 export async function getSessionBySlug(
   slug: string
 ): Promise<SessionWithParticipants | null> {
-  const sessions = await listSessions();
-  return sessions.find((session) => session.slug === slug) ?? null;
+  const session = await loadSessionWithParticipantsBySlug(slug);
+  return session ? mapSession(session) : null;
 }
 
 export async function createSession(title: string) {
@@ -181,202 +257,258 @@ export async function createSession(title: string) {
     throw new Error("Session title is required.");
   }
 
-  const store = await readStore();
-  const now = new Date().toISOString();
-
-  const session: SessionRecord = {
-    id: randomUUID(),
-    title: trimmed,
-    slug: await getUniqueSessionSlug(store, trimmed),
-    status: "draft",
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  store.sessions.push(session);
-  await writeStore(store);
-  return session;
+  return prisma.session.create({
+    data: {
+      title: trimmed,
+      slug: await getUniqueSessionSlug(trimmed),
+    },
+  });
 }
 
 export async function updateSessionStatus(
   sessionId: string,
   status: SessionStatus
 ) {
-  const store = await readStore();
-  const session = store.sessions.find((entry) => entry.id === sessionId);
+  const nextStatus = status as PrismaSessionStatus;
 
-  if (!session) {
-    throw new Error("Session not found.");
-  }
+  await prisma.$transaction(async (tx) => {
+    const session = await tx.session.findUnique({
+      where: { id: sessionId },
+      select: { id: true },
+    });
 
-  if (status === "live") {
-    store.sessions = store.sessions.map((entry) =>
-      entry.id === sessionId
-        ? { ...entry, status: "live", updatedAt: new Date().toISOString() }
-        : entry.status === "live"
-          ? { ...entry, status: "closed", updatedAt: new Date().toISOString() }
-          : entry
-    );
-  } else {
-    session.status = status;
-    session.updatedAt = new Date().toISOString();
-  }
+    if (!session) {
+      throw new Error("Session not found.");
+    }
 
-  await writeStore(store);
-}
+    if (nextStatus === PrismaSessionStatus.live) {
+      await tx.session.updateMany({
+        where: {
+          status: PrismaSessionStatus.live,
+          id: {
+            not: sessionId,
+          },
+        },
+        data: {
+          status: PrismaSessionStatus.closed,
+        },
+      });
+    }
 
-async function getOrCreatePerson(store: AppStore, name: string) {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    throw new Error("Participant name is required.");
-  }
-
-  const existing = store.people.find(
-    (person) => person.name.toLowerCase() === trimmed.toLowerCase()
-  );
-  if (existing) {
-    return existing;
-  }
-
-  const person: PersonRecord = {
-    id: randomUUID(),
-    name: trimmed,
-    createdAt: new Date().toISOString(),
-  };
-
-  store.people.push(person);
-  return person;
+    await tx.session.update({
+      where: { id: sessionId },
+      data: {
+        status: nextStatus,
+      },
+    });
+  });
 }
 
 export async function addParticipantToSession(sessionId: string, name: string) {
-  const store = await readStore();
-  const session = store.sessions.find((entry) => entry.id === sessionId);
+  await prisma.$transaction(async (tx) => {
+    const session = await tx.session.findUnique({
+      where: { id: sessionId },
+      select: { id: true },
+    });
 
-  if (!session) {
-    throw new Error("Session not found.");
-  }
+    if (!session) {
+      throw new Error("Session not found.");
+    }
 
-  const person = await getOrCreatePerson(store, name);
-  const participantCount = store.sessionParticipants.filter(
-    (participant) => participant.sessionId === sessionId
-  ).length;
+    const person = await getOrCreatePerson(tx, name);
+    const participantCount = await tx.sessionParticipant.count({
+      where: {
+        sessionId,
+      },
+    });
 
-  const alreadyExists = store.sessionParticipants.find(
-    (participant) =>
-      participant.sessionId === sessionId && participant.personId === person.id
-  );
+    const alreadyExists = await tx.sessionParticipant.findUnique({
+      where: {
+        sessionId_personId: {
+          sessionId,
+          personId: person.id,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
 
-  if (alreadyExists) {
-    throw new Error("Participant already added to this session.");
-  }
+    if (alreadyExists) {
+      throw new Error("Participant already added to this session.");
+    }
 
-  store.sessionParticipants.push({
-    id: randomUUID(),
-    sessionId,
-    personId: person.id,
-    displayOrder: participantCount + 1,
-    createdAt: new Date().toISOString(),
+    await tx.sessionParticipant.create({
+      data: {
+        sessionId,
+        personId: person.id,
+        displayOrder: participantCount + 1,
+      },
+    });
+
+    await tx.session.update({
+      where: { id: sessionId },
+      data: {
+        updatedAt: new Date(),
+      },
+    });
   });
-
-  session.updatedAt = new Date().toISOString();
-  await writeStore(store);
 }
 
 export async function removeParticipantFromSession(
   sessionId: string,
   participantId: string
 ) {
-  const store = await readStore();
-  const session = store.sessions.find((entry) => entry.id === sessionId);
-
-  if (!session) {
-    throw new Error("Session not found.");
-  }
-
-  const participant = store.sessionParticipants.find(
-    (entry) => entry.id === participantId && entry.sessionId === sessionId
-  );
-
-  if (!participant) {
-    throw new Error("Participant not found.");
-  }
-
-  store.sessionParticipants = store.sessionParticipants
-    .filter((entry) => entry.id !== participantId)
-    .map((entry) => {
-      if (entry.sessionId !== sessionId || entry.displayOrder <= participant.displayOrder) {
-        return entry;
-      }
-
-      return {
-        ...entry,
-        displayOrder: entry.displayOrder - 1,
-      };
+  await prisma.$transaction(async (tx) => {
+    const participant = await tx.sessionParticipant.findFirst({
+      where: {
+        id: participantId,
+        sessionId,
+      },
+      select: {
+        id: true,
+        displayOrder: true,
+      },
     });
 
-  store.votes = store.votes.filter((vote) => vote.participantId !== participantId);
-  session.updatedAt = new Date().toISOString();
-  await writeStore(store);
+    if (!participant) {
+      throw new Error("Participant not found.");
+    }
+
+    await tx.vote.deleteMany({
+      where: {
+        participantId,
+      },
+    });
+
+    await tx.sessionParticipant.delete({
+      where: {
+        id: participantId,
+      },
+    });
+
+    await tx.sessionParticipant.updateMany({
+      where: {
+        sessionId,
+        displayOrder: {
+          gt: participant.displayOrder,
+        },
+      },
+      data: {
+        displayOrder: {
+          decrement: 1,
+        },
+      },
+    });
+
+    await tx.session.update({
+      where: { id: sessionId },
+      data: {
+        updatedAt: new Date(),
+      },
+    });
+  });
 }
 
 export async function submitVotes(
   sessionSlug: string,
   ratings: Array<{ participantId: string; score: number }>,
   voterToken: string,
-  voterFingerprint?: string
+  voterFingerprint?: string,
+  requestMeta?: {
+    ipAddress?: string;
+    userAgent?: string;
+    acceptLanguage?: string;
+  }
 ) {
-  const store = await readStore();
-  const session = store.sessions.find((entry) => entry.slug === sessionSlug);
+  const cleanedRatings = ratings
+    .map((rating) => ({
+      participantId: rating.participantId,
+      score: Math.max(1, Math.min(10, Math.round(rating.score))),
+    }))
+    .filter((rating) => Number.isFinite(rating.score));
 
-  if (!session) {
-    throw new Error("Session not found.");
+  if (cleanedRatings.length === 0) {
+    throw new Error("No valid ratings submitted.");
   }
 
-  if (session.status !== "live") {
-    throw new Error("Voting is not open for this session.");
-  }
-
-  const existingVotes = store.votes.filter((vote) => {
-    if (vote.sessionId !== session.id) {
-      return false;
-    }
-
-    if (vote.voterToken === voterToken) {
-      return true;
-    }
-
-    return Boolean(
-      voterFingerprint && vote.voterFingerprint === voterFingerprint
-    );
-  });
-
-  if (existingVotes.length > 0) {
-    throw new Error("This device has already voted for this session.");
-  }
-
-  for (const rating of ratings) {
-    const participant = store.sessionParticipants.find(
-      (entry) => entry.id === rating.participantId && entry.sessionId === session.id
-    );
-
-    if (!participant) {
-      continue;
-    }
-
-    store.votes.push({
-      id: randomUUID(),
-      sessionId: session.id,
-      participantId: participant.id,
-      personId: participant.personId,
-      score: rating.score,
-      voterToken,
-      voterFingerprint,
-      createdAt: new Date().toISOString(),
+  await prisma.$transaction(async (tx) => {
+    const session = await tx.session.findUnique({
+      where: {
+        slug: sessionSlug,
+      },
+      include: {
+        participants: true,
+      },
     });
-  }
 
-  session.updatedAt = new Date().toISOString();
-  await writeStore(store);
+    if (!session) {
+      throw new Error("Session not found.");
+    }
+
+    if (session.status !== PrismaSessionStatus.live) {
+      throw new Error("Voting is not open for this session.");
+    }
+
+    const participantsById = new Map(
+      session.participants.map((participant) => [participant.id, participant])
+    );
+
+    const validVotes = cleanedRatings
+      .map((rating) => {
+        const participant = participantsById.get(rating.participantId);
+        if (!participant) {
+          return null;
+        }
+
+        return {
+          sessionId: session.id,
+          participantId: participant.id,
+          personId: participant.personId,
+          score: rating.score,
+        };
+      })
+      .filter((vote): vote is NonNullable<typeof vote> => vote !== null);
+
+    if (validVotes.length === 0) {
+      throw new Error("No valid ratings submitted.");
+    }
+
+    let submission;
+    try {
+      submission = await tx.voteSubmission.create({
+        data: {
+          sessionId: session.id,
+          voterToken,
+          voterFingerprint,
+          ipAddress: requestMeta?.ipAddress,
+          userAgent: requestMeta?.userAgent,
+          acceptLanguage: requestMeta?.acceptLanguage,
+        },
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) {
+        throw new Error("This device has already voted for this session.");
+      }
+      throw error;
+    }
+
+    await tx.vote.createMany({
+      data: validVotes.map((vote) => ({
+        ...vote,
+        submissionId: submission.id,
+      })),
+    });
+
+    await tx.session.update({
+      where: {
+        id: session.id,
+      },
+      data: {
+        updatedAt: new Date(),
+      },
+    });
+  });
 }
 
 export function createVoteFingerprint(input: {
@@ -393,88 +525,96 @@ export function createVoteFingerprint(input: {
   return createHash("sha256").update(raw).digest("hex");
 }
 
-export async function getGlobalLeaderboard() {
-  const store = await readStore();
-  const aggregates = new Map<
-    string,
-    {
-      name: string;
-      sum: number;
-      count: number;
-    }
-  >();
-
-  for (const vote of store.votes) {
-    const person = store.people.find((entry) => entry.id === vote.personId);
-    if (!person) {
-      continue;
-    }
-
-    const current = aggregates.get(vote.personId) ?? {
-      name: person.name,
-      sum: 0,
-      count: 0,
+async function buildLeaderboardRows(
+  aggregateRows: Array<{
+    personId: string;
+    _sum: {
+      score: number | null;
     };
+    _count: {
+      score: number;
+    };
+  }>
+): Promise<LeaderboardRow[]> {
+  const people = await prisma.person.findMany({
+    where: {
+      id: {
+        in: aggregateRows.map((entry) => entry.personId),
+      },
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
 
-    current.sum += vote.score;
-    current.count += 1;
-    aggregates.set(vote.personId, current);
-  }
+  const namesById = new Map(people.map((person) => [person.id, person.name]));
 
-  return [...aggregates.values()]
-    .map((entry) => ({
-      name: entry.name,
-      sum: entry.sum.toString(),
-      count: entry.count.toString(),
-      avg: (entry.sum / entry.count).toFixed(2),
-    }))
+  return aggregateRows
+    .map((entry) => {
+      const sum = entry._sum.score ?? 0;
+      const count = entry._count.score;
+
+      return {
+        name: namesById.get(entry.personId) ?? "Unknown",
+        sum: sum.toString(),
+        count: count.toString(),
+        avg: count ? (sum / count).toFixed(2) : "0.00",
+      };
+    })
     .sort((left, right) => Number.parseFloat(right.sum) - Number.parseFloat(left.sum));
 }
 
+export async function getGlobalLeaderboard() {
+  const aggregateRows = await prisma.vote.groupBy({
+    by: ["personId"],
+    _sum: {
+      score: true,
+    },
+    _count: {
+      score: true,
+    },
+    orderBy: {
+      _sum: {
+        score: "desc",
+      },
+    },
+  });
+
+  return buildLeaderboardRows(aggregateRows);
+}
+
 export async function getSessionLeaderboard(sessionId: string): Promise<LeaderboardRow[]> {
-  const store = await readStore();
-  const session = store.sessions.find((entry) => entry.id === sessionId);
+  const session = await prisma.session.findUnique({
+    where: {
+      id: sessionId,
+    },
+    select: {
+      id: true,
+    },
+  });
 
   if (!session) {
     throw new Error("Session not found.");
   }
 
-  const aggregates = new Map<
-    string,
-    {
-      name: string;
-      sum: number;
-      count: number;
-    }
-  >();
+  const aggregateRows = await prisma.vote.groupBy({
+    by: ["personId"],
+    where: {
+      sessionId,
+    },
+    _sum: {
+      score: true,
+    },
+    _count: {
+      score: true,
+    },
+    orderBy: {
+      _sum: {
+        score: "desc",
+      },
+    },
+  });
 
-  for (const vote of store.votes) {
-    if (vote.sessionId !== session.id) {
-      continue;
-    }
-
-    const person = store.people.find((entry) => entry.id === vote.personId);
-    if (!person) {
-      continue;
-    }
-
-    const current = aggregates.get(vote.personId) ?? {
-      name: person.name,
-      sum: 0,
-      count: 0,
-    };
-
-    current.sum += vote.score;
-    current.count += 1;
-    aggregates.set(vote.personId, current);
-  }
-
-  return [...aggregates.values()]
-    .map((entry) => ({
-      name: entry.name,
-      sum: entry.sum.toString(),
-      count: entry.count.toString(),
-      avg: entry.count ? (entry.sum / entry.count).toFixed(2) : "0.00",
-    }))
-    .sort((left, right) => Number.parseFloat(right.sum) - Number.parseFloat(left.sum));
+  return buildLeaderboardRows(aggregateRows);
 }

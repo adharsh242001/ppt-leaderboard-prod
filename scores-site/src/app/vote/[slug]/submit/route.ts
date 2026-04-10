@@ -36,7 +36,11 @@ export async function POST(
     acceptLanguage,
   });
 
-  await submitVotes(slug, ratings, voterToken, voterFingerprint);
+  await submitVotes(slug, ratings, voterToken, voterFingerprint, {
+    ipAddress,
+    userAgent,
+    acceptLanguage,
+  });
 
   cookieStore.set(voterCookieName, voterToken, {
     httpOnly: true,

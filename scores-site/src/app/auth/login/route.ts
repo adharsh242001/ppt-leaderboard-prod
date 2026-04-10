@@ -10,12 +10,12 @@ export async function POST(request: Request) {
   const formData = await request.formData();
   const password = String(formData.get("password") ?? "");
 
-  if (!verifyAdminPassword(password)) {
+  if (!(await verifyAdminPassword(password))) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(ADMIN_COOKIE_NAME, createAdminSessionToken(), {
+  cookieStore.set(ADMIN_COOKIE_NAME, await createAdminSessionToken(), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

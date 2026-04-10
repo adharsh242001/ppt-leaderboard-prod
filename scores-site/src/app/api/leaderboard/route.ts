@@ -7,7 +7,7 @@ export async function GET() {
   const cookieStore = await cookies();
   const token = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
 
-  if (!isValidAdminSession(token)) {
+  if (!(await isValidAdminSession(token))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
