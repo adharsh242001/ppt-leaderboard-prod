@@ -1,39 +1,70 @@
 # PPT Leaderboard
 
-This is a Next.js presentation leaderboard for PPT events.
+This is a Next.js presentation voting and leaderboard app for PPT events.
 
-It shows a live ranking screen that:
-- reads participant scores from a Google Sheets CSV
-- refreshes automatically every 10 seconds
-- ranks people by total score
-- highlights the top 3 like an awards board
-- shows participant photos when matching images exist in `public/photos`
-- falls back to initials when no matching photo is found
+It now supports:
+- private admin session management
+- public QR-based voting pages for each presentation
+- a private podium screen
+- a private full ranking screen
+- automatic participant photo matching from `public/photos`
+- one submission per device per session using a cookie token plus a lightweight hashed IP/device fingerprint
 
-## How It Works
+## Main Flow
 
-The app renders the same live board on:
+1. Sign in to the admin area at `/login`.
+2. Create a presentation session in `/admin`.
+3. Add participants to that session.
+4. Open voting for that session.
+5. Show the generated QR code to the audience.
+6. Audience votes on the public session page.
+7. Private podium and ranking pages update from the stored votes.
+
+## Routes
+
+Private:
+- `/admin`
+- `/admin/sessions/[id]`
 - `/`
 - `/scoreboard`
+- `/ranking`
 
-The main UI lives in `src/components/Scoreboard.tsx`.
+Public:
+- `/vote/[slug]`
+- `/vote/[slug]/done`
 
-Score data is fetched in the browser from the configured Google Sheets CSV URL.
+Auth:
+- `/login`
+- `/logout`
 
-Photos are indexed by the API route in `src/app/api/photos/route.ts`, which:
-- scans `public/photos`
-- accepts common image file types like `jpg`, `jpeg`, `png`, `webp`, `gif`, `avif`
-- normalizes filenames
-- returns a map the UI can use for avatar matching
+## Data Storage
 
-Name matching logic lives in `src/lib/photoMatching.ts`.
+App data is stored locally in:
+
+`data/app-data.json`
+
+This file stores:
+- sessions
+- people
+- session participants
+- votes
+
+## Vote Fairness
+
+Each session allows one submission per device.
+
+The app checks two things:
+- a per-session cookie token
+- a lightweight hashed device fingerprint built from IP address + browser headers
+
+This is intentionally simple and practical, not bank-grade anti-fraud, but it helps prevent easy repeat submissions from the same device.
 
 ## Photo Matching
 
-Photos do not need a hardcoded map anymore.
+Participant photos are resolved automatically from `public/photos`.
 
-The app matches a participant name from the sheet to a filename in `public/photos` by normalizing both values:
-- lowercase
+Matching rules:
+- lowercase names
 - remove spaces
 - remove `.`, `_`, `-`, `(`, `)`
 
@@ -42,16 +73,16 @@ Examples:
 - `Abin Sheen` matches `abinsheen.jpg`
 - `Midhun K` matches `midhun-k.png`
 
-If no photo matches, the app shows initials instead.
+If no photo matches, the UI shows initials.
 
-## Update Flow
+## Important Environment Variables
 
-To update the leaderboard for a new event:
+Set these before real use:
 
-1. Update names and scores in the Google Sheet.
-2. Add or replace participant photos in `public/photos`.
-3. Keep filenames close to participant names.
-4. Reload the board if needed, or wait for the next auto-refresh.
+- `ADMIN_PASSWORD`
+- `SESSION_SECRET`
+
+If not set, local fallbacks are used for development.
 
 ## Local Development
 
@@ -74,20 +105,8 @@ npm run build
 npm run start
 ```
 
-## Current Configuration
-
-The board is currently configured directly in:
-- `src/app/page.tsx`
-- `src/app/scoreboard/page.tsx`
-
-Both currently pass:
-- title: `PPT Leaderboard`
-- logo: `/Logo.png`
-- brand color: `#b85d32`
-- a published Google Sheets CSV URL
-
 ## Notes
 
-- This app is designed to be shown on a large screen during presentations.
-- The visual design is optimized as a live awards-style scoreboard, not a typical content website.
-- If multiple photo files normalize to the same name, the API keeps the first sorted file and ignores the rest.
+- This app is built for a large-screen presentation environment.
+- The audience should only access the public `/vote/[slug]` pages.
+- Admin, podium, and overall ranking pages are private.

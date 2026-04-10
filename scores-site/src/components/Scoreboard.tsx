@@ -223,6 +223,16 @@ async function fetchPhotoIndex(): Promise<Record<string, string>> {
   }
 }
 
+async function fetchInternalLeaderboard(): Promise<RawParticipantRow[]> {
+  const response = await fetch("/api/leaderboard", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Leaderboard fetch failed: ${response.status}`);
+  }
+
+  const json = (await response.json()) as { rows?: RawParticipantRow[] };
+  return json.rows ?? [];
+}
+
 function withRanks<T extends { scoreNum: number }>(
   items: T[]
 ): Array<T & { rank: number }> {
@@ -515,9 +525,7 @@ export default function Scoreboard({
             ? fetchFromCSV(csvUrl)
             : apiKey && sheetId && range
               ? fetchFromSheetsApi(apiKey, sheetId, range)
-              : Promise.reject(
-                  new Error("Provide csvUrl OR apiKey+sheetId+range")
-                ),
+              : fetchInternalLeaderboard(),
         ]);
 
         if (!isActive) {
@@ -638,16 +646,16 @@ export default function Scoreboard({
                 </div>
 
                 <div className="max-h-[36rem] space-y-3 overflow-y-auto pr-2">
-                  {remaining.map((participant) => (
+                  {(showRankingList ? rows : remaining).map((participant) => (
                     <TableRow
                       key={`${participant.rank}-${participant.name}`}
                       participant={participant}
                       brandColor={brandColor}
                     />
                   ))}
-                  {remaining.length === 0 ? (
+                  {(showRankingList ? rows : remaining).length === 0 ? (
                     <div className="rounded-[1.5rem] border border-[rgba(255,255,255,0.04)] bg-white/[0.03] px-6 py-10 text-center text-lg text-[var(--ink-soft)]">
-                      Only the podium participants are available right now.
+                      No ranking entries available right now.
                     </div>
                   ) : null}
                 </div>
