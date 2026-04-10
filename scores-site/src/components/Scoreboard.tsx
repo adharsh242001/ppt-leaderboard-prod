@@ -50,7 +50,7 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to load data";
 }
 
-function formatWholeNumber(value: string): string {
+function formatScore(value: string): string {
   const parsed = Number.parseFloat(value);
   if (Number.isNaN(parsed)) {
     return value || "0";
@@ -252,8 +252,8 @@ function Avatar({
       <Image
         src={participant.photoSrc}
         alt={participant.name}
-        width={240}
-        height={240}
+        width={256}
+        height={256}
         className={`${sizeClass} object-cover`}
         unoptimized
       />
@@ -273,43 +273,39 @@ function Header({
   lastUpdated?: Date;
 }) {
   return (
-    <header className="mx-auto max-w-7xl">
-      <div className="glass-panel flex items-center justify-between rounded-[2rem] px-6 py-4">
-        <div className="eyebrow text-[11px] text-[var(--accent-strong)]">
-          Presentation Awards
-        </div>
-        <div className="flex items-center gap-3 rounded-full border border-[var(--line)] bg-white/5 px-4 py-2">
-          <div className="h-2.5 w-2.5 rounded-full bg-[var(--accent-strong)] shadow-[0_0_16px_rgba(255,217,120,0.9)]" />
-          <span className="eyebrow text-[11px] text-[var(--ink-soft)]">Live</span>
-        </div>
-      </div>
-
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
-        <div className="flex items-center gap-5">
+    <header className="mx-auto max-w-7xl animate-[fadeIn_.6s_ease-out]">
+      <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
+        <div className="glass-panel-strong flex items-center gap-5 rounded-[2rem] px-6 py-5">
           {logoSrc ? (
-            <div className="glass-panel-strong flex h-28 w-28 items-center justify-center rounded-[2rem] p-4">
+            <div className="flex h-24 w-24 items-center justify-center rounded-[1.8rem] border border-[var(--line)] bg-white/5 p-3">
               <Image
                 src={logoSrc}
                 alt="Event logo"
-                width={96}
-                height={96}
-                className="h-20 w-20 object-contain"
+                width={84}
+                height={84}
+                className="h-16 w-16 object-contain"
                 unoptimized
               />
             </div>
           ) : null}
 
-          <div>
-            <p className="eyebrow text-sm text-[var(--accent-strong)]">Leaderboard</p>
-            <h1 className="mt-3 text-5xl font-semibold leading-none tracking-[-0.08em] sm:text-7xl">
+          <div className="min-w-0">
+            <div className="mb-3 flex items-center gap-3">
+              <span className="eyebrow text-[11px] text-[var(--accent-strong)]">Live Presentation Awards</span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(255,90,90,0.28)] bg-[rgba(255,70,70,0.12)] px-3 py-1 text-[11px] font-semibold tracking-[0.22em] text-white">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#ff4d4d] animate-pulse" />
+                LIVE
+              </span>
+            </div>
+            <h1 className="text-5xl font-semibold leading-none tracking-[-0.08em] sm:text-7xl">
               <span className="metal-text">{title}</span>
             </h1>
           </div>
         </div>
 
-        <div className="glass-panel-strong rounded-[2rem] px-6 py-5 text-right">
-          <p className="eyebrow text-[11px] text-[var(--ink-soft)]">Last update</p>
-          <p className="mt-3 text-3xl font-semibold tracking-[-0.05em]">
+        <div className="glass-panel rounded-[2rem] px-6 py-5 text-right">
+          <p className="eyebrow text-[11px] text-[var(--ink-soft)]">Updated</p>
+          <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
             {lastUpdated ? lastUpdated.toLocaleTimeString() : "--:--:--"}
           </p>
         </div>
@@ -324,38 +320,40 @@ function ChampionCard({
   participant: RankedParticipant;
 }) {
   return (
-    <section className="glass-panel-strong rounded-[2.5rem] px-8 py-8">
-      <p className="eyebrow text-sm text-[var(--accent-strong)]">Champion</p>
-      <div className="mt-6 grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+    <section className="glass-panel-strong relative overflow-hidden rounded-[2.6rem] px-8 py-8 animate-[fadeIn_.75s_ease-out]">
+      <div className="absolute right-[-10%] top-[-20%] h-80 w-80 rounded-full bg-[radial-gradient(circle,_rgba(241,199,101,0.22),_transparent_62%)] blur-3xl" />
+      <div className="relative grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
         <div>
-          <h2 className="text-6xl font-semibold leading-[0.92] tracking-[-0.08em] sm:text-7xl">
+          <p className="eyebrow text-sm text-[var(--accent-strong)]">Champion</p>
+          <h2 className="mt-4 text-6xl font-semibold leading-[0.92] tracking-[-0.08em] text-white sm:text-7xl">
             {participant.name}
           </h2>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-lg">
-              Rank #{participant.rank}
-            </div>
-            <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-lg">
-              Avg {formatAverage(participant.avg)}
-            </div>
-            <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-lg">
-              Count {formatCount(participant.count)}
-            </div>
-          </div>
 
           <div className="mt-10">
-            <p className="eyebrow text-[11px] text-[var(--ink-soft)]">Total Score</p>
-            <p className="mt-2 text-[7rem] font-semibold leading-none tracking-[-0.12em] sm:text-[8.5rem]">
-              <span className="metal-text">{formatWholeNumber(participant.sum)}</span>
+            <p className="eyebrow text-[11px] text-[var(--ink-soft)]">Score</p>
+            <p className="mt-2 text-[7rem] font-semibold leading-none tracking-[-0.13em] sm:text-[9rem]">
+              <span className="metal-text">{formatScore(participant.sum)}</span>
             </p>
+          </div>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-base text-white">
+              #1
+            </div>
+            <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-base text-[var(--ink-soft)]">
+              Avg {formatAverage(participant.avg)}
+            </div>
+            <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-base text-[var(--ink-soft)]">
+              Count {formatCount(participant.count)}
+            </div>
           </div>
         </div>
 
         <div className="relative flex justify-center">
-          <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,_rgba(241,199,101,0.2),_transparent_60%)] blur-3xl" />
+          <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,_rgba(241,199,101,0.38),_transparent_58%)] blur-3xl" />
           <Avatar
             participant={participant}
-            sizeClass="relative h-56 w-56 rounded-[2.8rem] border-4 border-[var(--accent-strong)] shadow-[0_24px_70px_rgba(0,0,0,0.45)] sm:h-64 sm:w-64"
+            sizeClass="relative h-56 w-56 rounded-[2.8rem] border-4 border-[var(--accent-strong)] shadow-[0_0_0_10px_rgba(241,199,101,0.07),0_30px_90px_rgba(0,0,0,0.45)] transition-transform duration-500 hover:scale-[1.02] sm:h-64 sm:w-64"
             fallbackClassName="relative flex items-center justify-center bg-[var(--accent)] text-7xl font-semibold text-[#20170a]"
           />
         </div>
@@ -364,7 +362,7 @@ function ChampionCard({
   );
 }
 
-function PodiumSideCard({
+function TopCompactCard({
   participant,
   label,
   accentColor,
@@ -374,33 +372,34 @@ function PodiumSideCard({
   accentColor: string;
 }) {
   return (
-    <article className="glass-panel rounded-[2rem] px-6 py-6">
-      <div className="flex items-start justify-between gap-4">
+    <article className="glass-panel rounded-[1.9rem] px-5 py-5 transition duration-300 hover:translate-y-[-2px] hover:scale-[1.01] hover:border-[rgba(241,199,101,0.28)] animate-[fadeIn_.85s_ease-out]">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <p className="eyebrow text-[11px]" style={{ color: accentColor }}>
             {label}
           </p>
-          <h3 className="mt-3 text-4xl font-semibold tracking-[-0.05em]">
+          <h3 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
             {participant.name}
           </h3>
         </div>
-        <div className="rounded-full border border-[var(--line)] px-4 py-2 text-sm">
+        <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-sm text-white">
           #{participant.rank}
         </div>
       </div>
 
-      <div className="mt-6 flex items-center gap-5">
+      <div className="mt-5 flex items-center gap-4">
         <Avatar
           participant={participant}
-          sizeClass="h-24 w-24 rounded-[1.8rem] border-2"
-          fallbackClassName="flex items-center justify-center rounded-[1.8rem] bg-[var(--accent)] text-3xl font-semibold text-[#20170a]"
+          sizeClass="h-20 w-20 rounded-[1.4rem] border-2 border-[rgba(241,199,101,0.24)]"
+          fallbackClassName="flex items-center justify-center rounded-[1.4rem] bg-[var(--accent)] text-3xl font-semibold text-[#20170a]"
         />
+
         <div>
-          <p className="text-6xl font-semibold leading-none tracking-[-0.08em]">
-            {formatWholeNumber(participant.sum)}
+          <p className="text-5xl font-semibold leading-none tracking-[-0.08em] text-white">
+            {formatScore(participant.sum)}
           </p>
-          <p className="mt-3 text-lg text-[var(--ink-soft)]">
-            Avg {formatAverage(participant.avg)} • Count {formatCount(participant.count)}
+          <p className="mt-3 text-base text-[var(--ink-soft)]">
+            Avg {formatAverage(participant.avg)}
           </p>
         </div>
       </div>
@@ -408,7 +407,7 @@ function PodiumSideCard({
   );
 }
 
-function StandingsRow({
+function TableRow({
   participant,
   brandColor,
 }: {
@@ -418,69 +417,68 @@ function StandingsRow({
   const initials = getInitials(participant.name);
 
   return (
-    <article className="glass-panel rounded-[1.9rem] px-5 py-5">
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr] lg:items-center">
-        <div className="flex items-center gap-4">
-          <div
-            className="flex h-14 w-14 items-center justify-center rounded-full text-lg font-semibold text-[#20170a]"
-            style={{ backgroundColor: brandColor }}
-          >
-            #{participant.rank}
-          </div>
-
-          {participant.photoSrc ? (
-            <Image
-              src={participant.photoSrc}
-              alt={participant.name}
-              width={84}
-              height={84}
-              className="h-[84px] w-[84px] rounded-[1.6rem] object-cover"
-              unoptimized
-            />
-          ) : (
-            <div
-              className="flex h-[84px] w-[84px] items-center justify-center rounded-[1.6rem] text-2xl font-semibold text-[#20170a]"
-              style={{ backgroundColor: brandColor }}
-            >
-              {initials}
-            </div>
-          )}
-
-          <div className="min-w-0">
-            <p className="text-3xl font-semibold tracking-[-0.05em]">{participant.name}</p>
-            <p className="mt-2 text-base text-[var(--ink-soft)]">Rank #{participant.rank}</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-[1.4rem] border border-[var(--line)] bg-white/5 px-4 py-4 text-center">
-            <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Score</p>
-            <p className="mt-3 text-4xl font-semibold leading-none tracking-[-0.08em]">
-              {formatWholeNumber(participant.sum)}
-            </p>
-          </div>
-          <div className="rounded-[1.4rem] border border-[var(--line)] bg-white/5 px-4 py-4 text-center">
-            <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Avg</p>
-            <p className="mt-3 text-4xl font-semibold leading-none tracking-[-0.08em]">
-              {formatAverage(participant.avg)}
-            </p>
-          </div>
-          <div className="rounded-[1.4rem] border border-[var(--line)] bg-white/5 px-4 py-4 text-center">
-            <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Count</p>
-            <p className="mt-3 text-4xl font-semibold leading-none tracking-[-0.08em]">
-              {formatCount(participant.count)}
-            </p>
-          </div>
+    <div className="grid grid-cols-[88px_minmax(0,1.6fr)_1fr_0.9fr_0.9fr] items-center gap-4 rounded-[1.5rem] border border-[rgba(255,255,255,0.04)] bg-white/[0.03] px-4 py-4 transition duration-300 hover:bg-white/[0.06]">
+      <div className="flex items-center gap-3">
+        <div
+          className="flex h-12 w-12 items-center justify-center rounded-full text-base font-semibold text-[#20170a]"
+          style={{ backgroundColor: brandColor }}
+        >
+          #{participant.rank}
         </div>
       </div>
-    </article>
+
+      <div className="flex min-w-0 items-center gap-4">
+        {participant.photoSrc ? (
+          <Image
+            src={participant.photoSrc}
+            alt={participant.name}
+            width={64}
+            height={64}
+            className="h-16 w-16 rounded-[1.2rem] object-cover"
+            unoptimized
+          />
+        ) : (
+          <div
+            className="flex h-16 w-16 items-center justify-center rounded-[1.2rem] text-xl font-semibold text-[#20170a]"
+            style={{ backgroundColor: brandColor }}
+          >
+            {initials}
+          </div>
+        )}
+
+        <p className="truncate text-2xl font-semibold tracking-[-0.04em] text-white">
+          {participant.name}
+        </p>
+      </div>
+
+      <div className="text-right">
+        <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Score</p>
+        <p className="mt-2 text-4xl font-semibold leading-none tracking-[-0.08em] text-white">
+          {formatScore(participant.sum)}
+        </p>
+      </div>
+
+      <div className="text-right">
+        <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Avg</p>
+        <p className="mt-2 text-3xl font-semibold leading-none tracking-[-0.06em] text-[var(--ink-soft)]">
+          {formatAverage(participant.avg)}
+        </p>
+      </div>
+
+      <div className="text-right">
+        <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Count</p>
+        <p className="mt-2 text-3xl font-semibold leading-none tracking-[-0.06em] text-[var(--ink-soft)]">
+          {formatCount(participant.count)}
+        </p>
+      </div>
+    </div>
   );
 }
 
 export default function Scoreboard({
   title = "Live Scores",
   logoSrc,
-  brandColor = "#f1c765",
+  brandColor = "#d4af37",
   csvUrl,
   apiKey,
   sheetId,
@@ -549,10 +547,11 @@ export default function Scoreboard({
 
   const top3 = useMemo(() => rows.slice(0, 3), [rows]);
   const remaining = useMemo(() => rows.slice(3), [rows]);
+  const tableRows = useMemo(() => [...top3, ...remaining], [top3, remaining]);
 
   return (
     <main className="stage-shell relative overflow-hidden px-4 py-8 sm:px-6 lg:px-8">
-      <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,_rgba(241,199,101,0.18),_transparent_26%)]" />
+      <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,_rgba(241,199,101,0.16),_transparent_26%)]" />
 
       <Header title={title} logoSrc={logoSrc} lastUpdated={lastUpdated} />
 
@@ -560,7 +559,7 @@ export default function Scoreboard({
         <section className="mx-auto mt-10 max-w-7xl">
           <div className="glass-panel-strong rounded-[2.5rem] px-6 py-16 text-center">
             <div className="mx-auto h-16 w-16 rounded-full border-4 border-[rgba(241,199,101,0.18)] border-t-[var(--accent-strong)] animate-spin" />
-            <p className="mt-6 text-2xl font-semibold">Loading leaderboard...</p>
+            <p className="mt-6 text-2xl font-semibold text-white">Loading leaderboard...</p>
           </div>
         </section>
       ) : null}
@@ -569,7 +568,7 @@ export default function Scoreboard({
         <section className="mx-auto mt-10 max-w-7xl">
           <div className="glass-panel-strong rounded-[2.4rem] border border-[rgba(255,120,120,0.28)] px-6 py-8">
             <p className="eyebrow text-[11px] text-[#ffc0c0]">Data issue</p>
-            <p className="mt-3 text-3xl font-semibold">Unable to load live scores.</p>
+            <p className="mt-3 text-3xl font-semibold text-white">Unable to load live scores.</p>
             <p className="mt-4 text-lg text-[var(--ink-soft)]">{error}</p>
           </div>
         </section>
@@ -578,18 +577,18 @@ export default function Scoreboard({
       {!loading && rows.length > 0 ? (
         <>
           {top3[0] ? (
-            <section className="mx-auto mt-10 grid max-w-7xl gap-5 lg:grid-cols-[1.25fr_0.75fr]">
+            <section className="mx-auto mt-10 grid max-w-7xl gap-5 lg:grid-cols-[1.2fr_0.8fr]">
               <ChampionCard participant={top3[0]} />
               <div className="grid gap-5">
                 {top3[1] ? (
-                  <PodiumSideCard
+                  <TopCompactCard
                     participant={top3[1]}
                     label="Second Place"
                     accentColor="var(--silver)"
                   />
                 ) : null}
                 {top3[2] ? (
-                  <PodiumSideCard
+                  <TopCompactCard
                     participant={top3[2]}
                     label="Third Place"
                     accentColor="var(--bronze)"
@@ -599,34 +598,37 @@ export default function Scoreboard({
             </section>
           ) : null}
 
-          <section className="mx-auto mt-10 max-w-7xl">
+          <section className="mx-auto mt-10 max-w-7xl animate-[fadeIn_1s_ease-out]">
             <div className="mb-6 flex items-end justify-between gap-4">
               <div>
-                <p className="eyebrow text-sm text-[var(--accent-strong)]">Standings</p>
-                <h2 className="mt-2 text-4xl font-semibold tracking-[-0.06em]">
+                <p className="eyebrow text-sm text-[var(--accent-strong)]">Leaderboard</p>
+                <h2 className="mt-2 text-4xl font-semibold tracking-[-0.06em] text-white">
                   Full Ranking
                 </h2>
               </div>
               <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-xs font-mono tracking-[0.18em] text-[var(--ink-soft)]">
-                LIVE RESULTS
+                SCROLLABLE
               </div>
             </div>
 
-            <div className="grid gap-4">
-              {top3.map((participant) => (
-                <StandingsRow
-                  key={`${participant.rank}-${participant.name}`}
-                  participant={participant}
-                  brandColor={brandColor}
-                />
-              ))}
-              {remaining.map((participant) => (
-                <StandingsRow
-                  key={`${participant.rank}-${participant.name}`}
-                  participant={participant}
-                  brandColor={brandColor}
-                />
-              ))}
+            <div className="glass-panel rounded-[2rem] p-4">
+              <div className="mb-3 grid grid-cols-[88px_minmax(0,1.6fr)_1fr_0.9fr_0.9fr] gap-4 px-4 pb-3 text-[11px] text-[var(--ink-soft)]">
+                <div className="eyebrow">Rank</div>
+                <div className="eyebrow">Participant</div>
+                <div className="eyebrow text-right">Score</div>
+                <div className="eyebrow text-right">Avg</div>
+                <div className="eyebrow text-right">Count</div>
+              </div>
+
+              <div className="max-h-[36rem] space-y-3 overflow-y-auto pr-2">
+                {tableRows.map((participant) => (
+                  <TableRow
+                    key={`${participant.rank}-${participant.name}`}
+                    participant={participant}
+                    brandColor={brandColor}
+                  />
+                ))}
+              </div>
             </div>
           </section>
         </>
@@ -636,7 +638,7 @@ export default function Scoreboard({
         <section className="mx-auto mt-10 max-w-7xl">
           <div className="glass-panel-strong rounded-[2.4rem] px-6 py-16 text-center">
             <p className="eyebrow text-sm text-[var(--accent-strong)]">No results yet</p>
-            <p className="mt-4 text-4xl font-semibold tracking-[-0.05em]">
+            <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white">
               Waiting for the first score
             </p>
           </div>
