@@ -2,12 +2,26 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: ppt-leaderboard-postgres
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=200
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ppt_leaderboard}
       POSTGRES_USER: ${POSTGRES_USER:-ppt_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-db-password}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    mem_limit: 768m
+    shm_size: 128m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ppt_user} -d ${POSTGRES_DB:-ppt_leaderboard}"]
       interval: 10s
@@ -29,12 +43,14 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
+      NODE_OPTIONS: --max-old-space-size=512
       DATABASE_URL: postgresql://${POSTGRES_USER:-ppt_user}:${POSTGRES_PASSWORD:-change-this-db-password}@postgres:5432/${POSTGRES_DB:-ppt_leaderboard}?schema=public
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-session-secret}
     volumes:
       - ./public/photos:/app/public/photos
+    mem_limit: 768m
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 30s

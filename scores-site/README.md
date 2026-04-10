@@ -238,6 +238,26 @@ Important behavior:
 - the app waits for the database
 - the app runs `prisma db push` on startup before starting the server
 - the app exposes `/api/health` for health checks
+- the runtime image is kept slim by copying only the standalone Next output and the Prisma runtime pieces it needs
+- the default Compose profile is tuned for a small server footprint
+
+### 2 GB server profile
+
+The included Docker setup is tuned to be reasonable on a `2 GB` VPS:
+- app container memory limit: `768 MB`
+- postgres container memory limit: `768 MB`
+- remaining memory stays available for Docker, kernel, filesystem cache, and burst usage
+
+That is a practical starting point for:
+- 100+ concurrent voters
+- one admin user
+- one live event screen
+
+This is still a small-server setup, so for best results:
+- keep only one app instance
+- keep photos on local disk only if you are running a single node
+- avoid other heavy processes on the same server
+- use managed backups if this becomes important event infrastructure
 
 ### Production deployment shape
 
