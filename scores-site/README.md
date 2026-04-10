@@ -153,6 +153,12 @@ Copy the template first:
 cp .env.example .env
 ```
 
+For a real VPS deployment, use:
+
+```bash
+cp .env.production.example .env
+```
+
 Important values:
 
 - `DATABASE_URL`
@@ -225,6 +231,7 @@ Included files:
 - `.dockerignore`
 - `docker-entrypoint.sh`
 - `.env.example`
+- `.env.production.example`
 
 ### What Docker Compose runs
 
@@ -267,6 +274,102 @@ This stack is designed so you can:
 - mount the photos folder
 - set env vars
 - host it without splitting the project into separate frontend and backend repos
+
+## VPS Deployment Checklist
+
+Use this for a small production server.
+
+### 1. Prepare the server
+
+- use a clean Ubuntu/Debian VPS with at least `2 GB RAM`
+- install Docker and Docker Compose
+- open only the ports you need, usually `80`, `443`, and optionally `22`
+- do not run other heavy apps on the same server
+
+### 2. Copy the project
+
+```bash
+git clone <your-repo-url>
+cd scores-site
+```
+
+Or copy the project files directly onto the server.
+
+### 3. Create the production env file
+
+```bash
+cp .env.production.example .env
+```
+
+Then edit `.env` and set:
+- `POSTGRES_PASSWORD`
+- `ADMIN_PASSWORD`
+- `SESSION_SECRET`
+
+Use strong secrets.
+
+### 4. Prepare uploaded photos
+
+Make sure this folder exists:
+
+```bash
+mkdir -p public/photos
+```
+
+### 5. Start the stack
+
+```bash
+docker compose up --build -d
+```
+
+### 6. Check that containers are healthy
+
+```bash
+docker compose ps
+docker compose logs app --tail 100
+docker compose logs postgres --tail 100
+```
+
+### 7. Test the app
+
+- open `/login`
+- sign in with the admin credentials from `.env`
+- create a session
+- add participants
+- open voting
+- scan the QR from a phone
+- verify votes appear on the private board
+
+### 8. Before the event
+
+- restart the stack once before the event day:
+
+```bash
+docker compose down
+docker compose up --build -d
+```
+
+- test with multiple phones on the real network
+- keep one backup copy of participant photos
+- keep the `.env` file backed up securely
+
+## One-Command VPS Deploy
+
+After the server is prepared and `.env` is ready, the main deploy command is:
+
+```bash
+docker compose up --build -d
+```
+
+Useful follow-up commands:
+
+```bash
+docker compose ps
+docker compose logs app --tail 100
+docker compose logs postgres --tail 100
+docker compose restart app
+docker compose down
+```
 
 ## Prisma Notes
 
