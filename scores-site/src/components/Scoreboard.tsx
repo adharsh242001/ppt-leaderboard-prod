@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import { normalizeParticipantName } from "@/lib/photoMatching";
 
@@ -18,6 +19,7 @@ type ScoreboardProps = {
   apiKey?: string;
   sheetId?: string;
   range?: string;
+  showRankingList?: boolean;
 };
 
 type RawParticipantRow = {
@@ -267,13 +269,15 @@ function Header({
   title,
   logoSrc,
   lastUpdated,
+  showRankingList,
 }: {
   title: string;
   logoSrc?: string;
   lastUpdated?: Date;
+  showRankingList: boolean;
 }) {
   return (
-    <header className="mx-auto max-w-7xl animate-[fadeIn_.6s_ease-out]">
+    <header className="mx-auto max-w-[96rem] animate-[fadeIn_.6s_ease-out]">
       <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
         <div className="glass-panel-strong flex items-center gap-5 rounded-[2rem] px-6 py-5">
           {logoSrc ? (
@@ -304,7 +308,15 @@ function Header({
         </div>
 
         <div className="glass-panel rounded-[2rem] px-6 py-5 text-right">
-          <p className="eyebrow text-[11px] text-[var(--ink-soft)]">Updated</p>
+          <div className="flex items-center justify-between gap-4">
+            <p className="eyebrow text-[11px] text-[var(--ink-soft)]">Updated</p>
+            <Link
+              href={showRankingList ? "/scoreboard" : "/ranking"}
+              className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-[11px] font-semibold tracking-[0.18em] text-[var(--ink-soft)] transition hover:bg-white/10"
+            >
+              {showRankingList ? "PODIUM" : "RANKING"}
+            </Link>
+          </div>
           <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
             {lastUpdated ? lastUpdated.toLocaleTimeString() : "--:--:--"}
           </p>
@@ -483,6 +495,7 @@ export default function Scoreboard({
   apiKey,
   sheetId,
   range,
+  showRankingList = false,
 }: ScoreboardProps) {
   const [rows, setRows] = useState<RankedParticipant[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -547,16 +560,19 @@ export default function Scoreboard({
 
   const top3 = useMemo(() => rows.slice(0, 3), [rows]);
   const remaining = useMemo(() => rows.slice(3), [rows]);
-  const tableRows = useMemo(() => [...top3, ...remaining], [top3, remaining]);
-
   return (
-    <main className="stage-shell relative overflow-hidden px-4 py-8 sm:px-6 lg:px-8">
+    <main className="stage-shell relative min-h-screen overflow-hidden px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-14">
       <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,_rgba(241,199,101,0.16),_transparent_26%)]" />
 
-      <Header title={title} logoSrc={logoSrc} lastUpdated={lastUpdated} />
+      <Header
+        title={title}
+        logoSrc={logoSrc}
+        lastUpdated={lastUpdated}
+        showRankingList={showRankingList}
+      />
 
       {loading ? (
-        <section className="mx-auto mt-10 max-w-7xl">
+        <section className="mx-auto mt-10 max-w-[96rem]">
           <div className="glass-panel-strong rounded-[2.5rem] px-6 py-16 text-center">
             <div className="mx-auto h-16 w-16 rounded-full border-4 border-[rgba(241,199,101,0.18)] border-t-[var(--accent-strong)] animate-spin" />
             <p className="mt-6 text-2xl font-semibold text-white">Loading leaderboard...</p>
@@ -565,7 +581,7 @@ export default function Scoreboard({
       ) : null}
 
       {error ? (
-        <section className="mx-auto mt-10 max-w-7xl">
+        <section className="mx-auto mt-10 max-w-[96rem]">
           <div className="glass-panel-strong rounded-[2.4rem] border border-[rgba(255,120,120,0.28)] px-6 py-8">
             <p className="eyebrow text-[11px] text-[#ffc0c0]">Data issue</p>
             <p className="mt-3 text-3xl font-semibold text-white">Unable to load live scores.</p>
@@ -577,7 +593,7 @@ export default function Scoreboard({
       {!loading && rows.length > 0 ? (
         <>
           {top3[0] ? (
-            <section className="mx-auto mt-10 grid max-w-7xl gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+            <section className="mx-auto mt-10 grid max-w-[96rem] gap-5 lg:grid-cols-[1.2fr_0.8fr]">
               <ChampionCard participant={top3[0]} />
               <div className="grid gap-5">
                 {top3[1] ? (
@@ -598,44 +614,51 @@ export default function Scoreboard({
             </section>
           ) : null}
 
-          <section className="mx-auto mt-10 max-w-7xl animate-[fadeIn_1s_ease-out]">
-            <div className="mb-6 flex items-end justify-between gap-4">
-              <div>
-                <p className="eyebrow text-sm text-[var(--accent-strong)]">Leaderboard</p>
-                <h2 className="mt-2 text-4xl font-semibold tracking-[-0.06em] text-white">
-                  Full Ranking
-                </h2>
-              </div>
-              <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-xs font-mono tracking-[0.18em] text-[var(--ink-soft)]">
-                SCROLLABLE
-              </div>
-            </div>
-
-            <div className="glass-panel rounded-[2rem] p-4">
-              <div className="mb-3 grid grid-cols-[88px_minmax(0,1.6fr)_1fr_0.9fr_0.9fr] gap-4 px-4 pb-3 text-[11px] text-[var(--ink-soft)]">
-                <div className="eyebrow">Rank</div>
-                <div className="eyebrow">Participant</div>
-                <div className="eyebrow text-right">Score</div>
-                <div className="eyebrow text-right">Avg</div>
-                <div className="eyebrow text-right">Count</div>
+          {showRankingList ? (
+            <section className="mx-auto mt-10 max-w-[96rem] animate-[fadeIn_1s_ease-out]">
+              <div className="mb-6 flex items-end justify-between gap-4">
+                <div>
+                  <p className="eyebrow text-sm text-[var(--accent-strong)]">Leaderboard</p>
+                  <h2 className="mt-2 text-4xl font-semibold tracking-[-0.06em] text-white">
+                    Full Ranking List
+                  </h2>
+                </div>
+                <div className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-xs font-mono tracking-[0.18em] text-[var(--ink-soft)]">
+                  SCROLLABLE
+                </div>
               </div>
 
-              <div className="max-h-[36rem] space-y-3 overflow-y-auto pr-2">
-                {tableRows.map((participant) => (
-                  <TableRow
-                    key={`${participant.rank}-${participant.name}`}
-                    participant={participant}
-                    brandColor={brandColor}
-                  />
-                ))}
+              <div className="glass-panel rounded-[2rem] p-4">
+                <div className="mb-3 grid grid-cols-[88px_minmax(0,1.6fr)_1fr_0.9fr_0.9fr] gap-4 px-4 pb-3 text-[11px] text-[var(--ink-soft)]">
+                  <div className="eyebrow">Rank</div>
+                  <div className="eyebrow">Participant</div>
+                  <div className="eyebrow text-right">Score</div>
+                  <div className="eyebrow text-right">Avg</div>
+                  <div className="eyebrow text-right">Count</div>
+                </div>
+
+                <div className="max-h-[36rem] space-y-3 overflow-y-auto pr-2">
+                  {remaining.map((participant) => (
+                    <TableRow
+                      key={`${participant.rank}-${participant.name}`}
+                      participant={participant}
+                      brandColor={brandColor}
+                    />
+                  ))}
+                  {remaining.length === 0 ? (
+                    <div className="rounded-[1.5rem] border border-[rgba(255,255,255,0.04)] bg-white/[0.03] px-6 py-10 text-center text-lg text-[var(--ink-soft)]">
+                      Only the podium participants are available right now.
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          ) : null}
         </>
       ) : null}
 
       {!loading && rows.length === 0 && !error ? (
-        <section className="mx-auto mt-10 max-w-7xl">
+        <section className="mx-auto mt-10 max-w-[96rem]">
           <div className="glass-panel-strong rounded-[2.4rem] px-6 py-16 text-center">
             <p className="eyebrow text-sm text-[var(--accent-strong)]">No results yet</p>
             <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white">
