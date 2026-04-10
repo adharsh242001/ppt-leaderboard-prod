@@ -5,7 +5,7 @@ attempt=0
 
 while true
 do
-  if npx prisma db push --skip-generate >/tmp/prisma-db-push.log 2>&1; then
+  if node ./node_modules/prisma/build/index.js db push --skip-generate >/tmp/prisma-db-push.log 2>&1; then
     cat /tmp/prisma-db-push.log
     break
   fi

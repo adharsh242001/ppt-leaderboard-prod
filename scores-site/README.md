@@ -228,8 +228,10 @@ docker compose down
 Included files:
 - `Dockerfile`
 - `docker-compose.yml`
+- `docker-compose.proxy.yml`
 - `.dockerignore`
 - `docker-entrypoint.sh`
+- `deploy.sh`
 - `.env.example`
 - `.env.production.example`
 
@@ -275,6 +277,21 @@ This stack is designed so you can:
 - set env vars
 - host it without splitting the project into separate frontend and backend repos
 
+### Optional Nginx + HTTPS layer
+
+For domain + HTTPS, the repo now also includes:
+- `docker-compose.proxy.yml`
+- `deploy.sh`
+
+The proxy stack uses:
+- `nginxproxy/nginx-proxy`
+- `nginxproxy/acme-companion`
+
+That gives you:
+- Nginx reverse proxy
+- automatic Let's Encrypt certificates
+- HTTPS termination in front of the app
+
 ## VPS Deployment Checklist
 
 Use this for a small production server.
@@ -305,8 +322,15 @@ Then edit `.env` and set:
 - `POSTGRES_PASSWORD`
 - `ADMIN_PASSWORD`
 - `SESSION_SECRET`
+- `PUBLIC_DOMAIN`
+- `LETSENCRYPT_EMAIL`
 
 Use strong secrets.
+
+Recommended production value:
+- `APP_PORT_BIND=127.0.0.1:3000`
+
+That keeps the app port local to the server while Nginx handles public traffic.
 
 ### 4. Prepare uploaded photos
 
@@ -319,20 +343,30 @@ mkdir -p public/photos
 ### 5. Start the stack
 
 ```bash
-docker compose up --build -d
+chmod +x deploy.sh
+./deploy.sh
 ```
+
+This script automatically:
+- creates `public/photos` if needed
+- loads `.env`
+- starts the normal app stack
+- starts the Nginx + HTTPS stack when `PUBLIC_DOMAIN` and `LETSENCRYPT_EMAIL` are set
 
 ### 6. Check that containers are healthy
 
 ```bash
-docker compose ps
-docker compose logs app --tail 100
-docker compose logs postgres --tail 100
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml ps
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs app --tail 100
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs postgres --tail 100
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs nginx-proxy --tail 100
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs letsencrypt --tail 100
 ```
 
 ### 7. Test the app
 
-- open `/login`
+- open `https://your-domain`
+- open `https://your-domain/login`
 - sign in with the admin credentials from `.env`
 - create a session
 - add participants
@@ -345,8 +379,8 @@ docker compose logs postgres --tail 100
 - restart the stack once before the event day:
 
 ```bash
-docker compose down
-docker compose up --build -d
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml down
+./deploy.sh
 ```
 
 - test with multiple phones on the real network
@@ -358,18 +392,33 @@ docker compose up --build -d
 After the server is prepared and `.env` is ready, the main deploy command is:
 
 ```bash
-docker compose up --build -d
+./deploy.sh
 ```
 
 Useful follow-up commands:
 
 ```bash
-docker compose ps
-docker compose logs app --tail 100
-docker compose logs postgres --tail 100
-docker compose restart app
-docker compose down
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml ps
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs app --tail 100
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs postgres --tail 100
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs nginx-proxy --tail 100
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs letsencrypt --tail 100
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml restart app
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml down
 ```
+
+## DNS And HTTPS Notes
+
+Before using the proxy setup:
+- point your domain's `A` record to your server IP
+- wait for DNS propagation
+- make sure ports `80` and `443` are open on the VPS firewall
+
+The HTTPS setup works only when:
+- the domain resolves to the VPS
+- Let's Encrypt can reach the server on port `80`
+
+If you want to run without domain + HTTPS first, leave `PUBLIC_DOMAIN` and `LETSENCRYPT_EMAIL` empty and `deploy.sh` will start only the app + database stack.
 
 ## Prisma Notes
 

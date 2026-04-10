@@ -34,11 +34,14 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ppt-leaderboard-app
+    user: "10001:10001"
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${APP_PORT_BIND:-3000}:3000"
+    expose:
+      - "3000"
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -51,6 +54,8 @@ services:
     volumes:
       - ./public/photos:/app/public/photos
     mem_limit: 768m
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 30s
