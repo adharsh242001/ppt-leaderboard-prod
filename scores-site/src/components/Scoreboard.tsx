@@ -1,434 +1,685 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import React, { useEffect, useMemo, useState } from "react";
+import { normalizeParticipantName } from "@/lib/photoMatching";
 
-// ---- Config ----
 const REFRESH_MS = 10_000;
 const NAME_COL = "Name";
 const SCORE_COL = "Sum";
 const COUNT_COL = "Count";
 const AVG_COL = "Avg";
 
-// Local photos mapped by *exact* Name from the sheet
-const PHOTO_BY_NAME: Record<string, string> = {
-  "Abdu": "/photos/Abdu.jpg",
-  "Amal": "/photos/Amal.jpg",
-  "Anugrah": "/photos/Anugrah.jpg",
-  "Archana": "/photos/Archana.jpg",
-  "Jishnu": "/photos/Jishnu.jpg",
-  "Midhuna": "/photos/Midhuna.jpg",
-  "Nidheesh": "/photos/Nidheesh.jpg",
-  "Rahul": "/photos/Rahul.jpg",
-  "Sooraj": "/photos/Sooraj.jpg",
-  "Akash": "/photos/Akash.jpg",
-  "Aneesh": "/photos/Aneesh.jpg",
-  "Arathi": "/photos/Arathi.jpg",
-  "Jeena": "/photos/Jeena.jpg",
-  "Midhun": "/photos/Midhun.jpg",
-  "Muhsin": "/photos/Muhsin.jpg",
-  "Nikhil": "/photos/Nikhil.jpg",
-  "Ranju": "/photos/Ranju.jpg",
-  "Sreelakshmi": "/photos/Sreelakshmi.jpg",
+type ScoreboardProps = {
+  title?: string;
+  logoSrc?: string;
+  brandColor?: string;
+  csvUrl?: string;
+  apiKey?: string;
+  sheetId?: string;
+  range?: string;
+  showRankingList?: boolean;
 };
 
+type RawParticipantRow = {
+  name: string;
+  sum: string;
+  count: string;
+  avg: string;
+};
 
-// ---- Floating Background Elements ----
-function BackgroundElements() {
-  return (
-    <div className="fixed inset-0 overflow-hidden pointer-events-none">
-      {/* Animated circles */}
-      <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-100 rounded-full opacity-30 animate-pulse"></div>
-      <div className="absolute top-1/2 -left-20 w-60 h-60 bg-blue-100 rounded-full opacity-20 animate-bounce" style={{animationDuration: '3s'}}></div>
-      <div className="absolute bottom-10 right-1/4 w-40 h-40 bg-green-100 rounded-full opacity-25 animate-pulse" style={{animationDelay: '1s'}}></div>
-      
-      {/* Floating geometric shapes */}
-      <div className="absolute top-1/4 left-1/4 w-6 h-6 bg-purple-200 rotate-45 opacity-40 animate-spin" style={{animationDuration: '8s'}}></div>
-      <div className="absolute top-3/4 right-1/3 w-4 h-4 bg-blue-200 rounded-full opacity-30 animate-bounce" style={{animationDuration: '4s', animationDelay: '2s'}}></div>
-      <div className="absolute bottom-1/3 left-1/3 w-8 h-2 bg-green-200 opacity-30 animate-pulse" style={{animationDelay: '3s'}}></div>
-      
-      {/* Gradient orbs */}
-      <div className="absolute top-20 right-1/3 w-32 h-32 bg-gradient-to-br from-purple-200 to-transparent rounded-full opacity-20 animate-pulse"></div>
-      <div className="absolute bottom-40 left-1/4 w-24 h-24 bg-gradient-to-br from-blue-200 to-transparent rounded-full opacity-15 animate-bounce" style={{animationDuration: '5s'}}></div>
-    </div>
-  );
+type RankedParticipant = RawParticipantRow & {
+  scoreNum: number;
+  rank: number;
+  photoSrc?: string;
+};
+
+type PhotoIndexResponse = {
+  photos?: Record<string, string>;
+};
+
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((segment) => segment[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
-// ---- CSV helpers ----
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Failed to load data";
+}
+
+function formatScore(value: string): string {
+  const parsed = Number.parseFloat(value);
+  if (Number.isNaN(parsed)) {
+    return value || "0";
+  }
+
+  return Math.round(parsed).toString();
+}
+
+function formatAverage(value: string): string {
+  const parsed = Number.parseFloat(value);
+  if (Number.isNaN(parsed)) {
+    return value || "0.00";
+  }
+
+  return parsed.toFixed(2);
+}
+
+function formatCount(value: string): string {
+  const parsed = Number.parseFloat(value);
+  if (Number.isNaN(parsed)) {
+    return value || "0";
+  }
+
+  return Math.round(parsed).toString();
+}
+
+function resolvePhotoSrc(
+  participantName: string,
+  photoIndex: Record<string, string>
+): string | undefined {
+  const normalizedName = normalizeParticipantName(participantName);
+  if (!normalizedName) {
+    return undefined;
+  }
+
+  return photoIndex[normalizedName];
+}
+
 function parseCSV(csvText: string): string[][] {
   const firstLine = csvText.split(/\r?\n/)[0] ?? "";
   const useSemicolon = firstLine.includes(";") && !firstLine.includes(",");
-  const delim = useSemicolon ? ";" : ",";
+  const delimiter = useSemicolon ? ";" : ",";
 
   const rows: string[][] = [];
-  let i = 0, cur = "", row: string[] = [], inQuotes = false;
+  let currentValue = "";
+  let currentRow: string[] = [];
+  let inQuotes = false;
 
-  while (i < csvText.length) {
-    const c = csvText[i];
+  for (let index = 0; index < csvText.length; index += 1) {
+    const character = csvText[index];
+
     if (inQuotes) {
-      if (c === '"') {
-        if (csvText[i + 1] === '"') { cur += '"'; i++; }
-        else { inQuotes = false; }
+      if (character === '"') {
+        if (csvText[index + 1] === '"') {
+          currentValue += '"';
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
       } else {
-        cur += c;
+        currentValue += character;
       }
-    } else {
-      if (c === '"') inQuotes = true;
-      else if (c === delim) { row.push(cur); cur = ""; }
-      else if (c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
-      else if (c === "\r") { /* ignore */ }
-      else { cur += c; }
+      continue;
     }
-    i++;
+
+    if (character === '"') {
+      inQuotes = true;
+      continue;
+    }
+
+    if (character === delimiter) {
+      currentRow.push(currentValue);
+      currentValue = "";
+      continue;
+    }
+
+    if (character === "\n") {
+      currentRow.push(currentValue);
+      rows.push(currentRow);
+      currentRow = [];
+      currentValue = "";
+      continue;
+    }
+
+    if (character !== "\r") {
+      currentValue += character;
+    }
   }
-  row.push(cur);
-  rows.push(row);
-  return rows.filter(r => r.length && r.some(cell => (cell ?? "").trim() !== ""));
+
+  currentRow.push(currentValue);
+  rows.push(currentRow);
+
+  return rows.filter((row) => row.some((cell) => cell.trim() !== ""));
 }
 
-async function fetchFromCSV(csvUrl: string) {
-  const res = await fetch(csvUrl, { cache: "no-store" });
-  if (!res.ok) throw new Error(`CSV fetch failed: ${res.status}`);
-  const text = await res.text();
-  const rows = parseCSV(text);
-  if (!rows.length) return [];
+function getHeaderIndex(header: string[]): Record<string, number> {
+  const headerIndex: Record<string, number> = {};
+
+  header.forEach((value, index) => {
+    headerIndex[value.trim().toLowerCase()] = index;
+  });
+
+  return headerIndex;
+}
+
+function mapRowsToParticipants(rows: string[][]): RawParticipantRow[] {
+  if (!rows.length) {
+    return [];
+  }
 
   const [header, ...data] = rows;
-  const norm = (s: string) => (s ?? "").trim().toLowerCase();
-  const headerIdx: Record<string, number> = {};
-  header.forEach((h, i) => (headerIdx[norm(h)] = i));
+  const headerIndex = getHeaderIndex(header);
+  const nameIndex = headerIndex[NAME_COL.toLowerCase()];
+  const sumIndex = headerIndex[SCORE_COL.toLowerCase()];
+  const countIndex = headerIndex[COUNT_COL.toLowerCase()];
+  const avgIndex = headerIndex[AVG_COL.toLowerCase()];
 
-  const nameIdx = headerIdx[norm(NAME_COL)];
-  const sumIdx = headerIdx[norm(SCORE_COL)];
-  const countIdx = headerIdx[norm(COUNT_COL)];
-  const avgIdx = headerIdx[norm(AVG_COL)];
+  if (nameIndex === undefined || sumIndex === undefined) {
+    return [];
+  }
 
-  if (nameIdx === undefined || sumIdx === undefined) return [];
-
-  return data.map(r => ({
-    name: (r[nameIdx] ?? "").trim(),
-    sum: (r[sumIdx] ?? "").trim(),
-    count: (r[countIdx] ?? "").trim(),
-    avg: (r[avgIdx] ?? "").trim(),
+  return data.map((row) => ({
+    name: (row[nameIndex] ?? "").trim(),
+    sum: (row[sumIndex] ?? "").trim(),
+    count: (row[countIndex] ?? "").trim(),
+    avg: (row[avgIndex] ?? "").trim(),
   }));
 }
 
-async function fetchFromSheetsApi(apiKey: string, sheetId: string, range: string) {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Sheets API fetch failed: ${res.status}`);
-  const json = await res.json();
-  const values: string[][] = json.values || [];
-  if (!values.length) return [];
-  const [header, ...data] = values;
-  const norm = (s: string) => (s ?? "").trim().toLowerCase();
-  const headerIdx: Record<string, number> = {};
-  header.forEach((h: string, i: number) => (headerIdx[norm(h)] = i));
+async function fetchFromCSV(csvUrl: string): Promise<RawParticipantRow[]> {
+  const response = await fetch(csvUrl, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`CSV fetch failed: ${response.status}`);
+  }
 
-  const nameIdx = headerIdx[norm(NAME_COL)];
-  const sumIdx = headerIdx[norm(SCORE_COL)];
-  const countIdx = headerIdx[norm(COUNT_COL)];
-  const avgIdx = headerIdx[norm(AVG_COL)];
-
-  if (nameIdx === undefined || sumIdx === undefined) return [];
-
-  return data.map((r: string[]) => ({
-    name: (r[nameIdx] ?? "").trim(),
-    sum: (r[sumIdx] ?? "").trim(),
-    count: (r[countIdx] ?? "").trim(),
-    avg: (r[avgIdx] ?? "").trim(),
-  }));
+  const text = await response.text();
+  return mapRowsToParticipants(parseCSV(text));
 }
 
-// ---- Ranking helper ----
-function withRanks<T extends { scoreNum: number }>(items: T[]) {
-  const sorted = [...items].sort((a, b) => b.scoreNum - a.scoreNum);
-  let lastScore: number | null = null; let lastRank = 0;
-  return sorted.map((item, idx) => {
-    const rank = (lastScore === item.scoreNum) ? lastRank : (idx + 1);
-    lastScore = item.scoreNum; lastRank = rank;
+async function fetchFromSheetsApi(
+  apiKey: string,
+  sheetId: string,
+  range: string
+): Promise<RawParticipantRow[]> {
+  const url =
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/` +
+    `${encodeURIComponent(range)}?key=${apiKey}`;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Sheets API fetch failed: ${response.status}`);
+  }
+
+  const json = (await response.json()) as { values?: string[][] };
+  return mapRowsToParticipants(json.values ?? []);
+}
+
+async function fetchPhotoIndex(): Promise<Record<string, string>> {
+  try {
+    const response = await fetch("/api/photos", { cache: "no-store" });
+    if (!response.ok) {
+      return {};
+    }
+
+    const json = (await response.json()) as PhotoIndexResponse;
+    return json.photos ?? {};
+  } catch {
+    return {};
+  }
+}
+
+async function fetchInternalLeaderboard(): Promise<RawParticipantRow[]> {
+  const response = await fetch("/api/leaderboard", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Leaderboard fetch failed: ${response.status}`);
+  }
+
+  const json = (await response.json()) as { rows?: RawParticipantRow[] };
+  return json.rows ?? [];
+}
+
+function withRanks<T extends { scoreNum: number }>(
+  items: T[]
+): Array<T & { rank: number }> {
+  const sorted = [...items].sort((left, right) => right.scoreNum - left.scoreNum);
+  let lastScore: number | null = null;
+  let lastRank = 0;
+
+  return sorted.map((item, index) => {
+    const rank = lastScore === item.scoreNum ? lastRank : index + 1;
+    lastScore = item.scoreNum;
+    lastRank = rank;
     return { ...item, rank };
   });
 }
 
-// ---- Header Component ----
-function Header({ title, logoSrc, lastUpdated }: { title: string; logoSrc?: string; lastUpdated?: Date }) {
+function Avatar({
+  participant,
+  sizeClass,
+  fallbackClassName,
+}: {
+  participant: RankedParticipant;
+  sizeClass: string;
+  fallbackClassName: string;
+}) {
+  const initials = getInitials(participant.name);
+
+  if (participant.photoSrc) {
+    return (
+      <Image
+        src={participant.photoSrc}
+        alt={participant.name}
+        width={256}
+        height={256}
+        className={`${sizeClass} object-cover`}
+        unoptimized
+      />
+    );
+  }
+
+  return <div className={`${sizeClass} ${fallbackClassName}`}>{initials}</div>;
+}
+
+function Header({
+  title,
+  logoSrc,
+  lastUpdated,
+  showRankingList,
+}: {
+  title: string;
+  logoSrc?: string;
+  lastUpdated?: Date;
+  showRankingList: boolean;
+}) {
   return (
-    <header className="relative z-10 bg-white/95 backdrop-blur-sm border-b border-gray-100 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            {logoSrc && (
-              <img
+    <header className="mx-auto max-w-[96rem] animate-[fadeIn_.6s_ease-out]">
+      <div className="grid gap-5 lg:grid-cols-[1.28fr_0.72fr] lg:items-center">
+        <div className="glass-panel-strong flex items-center gap-5 rounded-[1.6rem] px-6 py-5">
+          {logoSrc ? (
+            <div className="stat-slab flex h-24 w-24 items-center justify-center rounded-[1rem] p-3">
+              <Image
                 src={logoSrc}
-                alt="Logo"
-                className="h-12 w-18 rounded-xl object-cover shadow-md"
+                alt="Event logo"
+                width={84}
+                height={84}
+                className="h-16 w-16 object-contain"
+                unoptimized
               />
-            )}
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-gray-900">{title}</h1>
-              <p className="text-sm text-gray-500 mt-1">Real-time presentation scores</p>
             </div>
-          </div>
-          
-          <div className="text-right">
-            <div className="flex items-center space-x-2 text-green-600 bg-green-50 px-3 py-2 rounded-full">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium">LIVE</span>
+          ) : null}
+
+          <div className="min-w-0">
+            <div className="mb-3 flex items-center gap-3">
+              <span className="eyebrow text-[11px] text-[var(--accent-strong)]">Live Presentation Awards</span>
+              <span className="inline-flex items-center gap-2 rounded-md border border-[rgba(255,90,90,0.2)] bg-[rgba(255,70,70,0.08)] px-3 py-1.5 text-[11px] font-semibold tracking-[0.22em] text-white">
+                <span className="h-2 w-2 rounded-full bg-[#ff4d4d] animate-pulse" />
+                LIVE
+              </span>
             </div>
-            {lastUpdated && (
-              <p className="text-xs text-gray-400 mt-1">
-                Updated {lastUpdated.toLocaleTimeString()}
-              </p>
-            )}
+            <h1 className="text-5xl font-semibold leading-none tracking-[-0.08em] sm:text-7xl">
+              <span className="metal-text">{title}</span>
+            </h1>
           </div>
+        </div>
+
+        <div className="glass-panel rounded-[1.6rem] px-6 py-5 text-right">
+          <div className="flex items-center justify-between gap-4">
+            <p className="eyebrow text-[11px] text-[var(--ink-soft)]">Updated</p>
+            <Link
+              href={showRankingList ? "/scoreboard" : "/ranking"}
+              className="stat-slab rounded-md px-4 py-2 text-[11px] font-semibold tracking-[0.18em] text-[var(--ink-soft)] transition hover:border-[var(--line-strong)]"
+            >
+              {showRankingList ? "PODIUM" : "RANKING"}
+            </Link>
+          </div>
+          <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
+            {lastUpdated ? lastUpdated.toLocaleTimeString() : "--:--:--"}
+          </p>
         </div>
       </div>
     </header>
   );
 }
 
-// ---- Podium Component ----
-function Podium({ top3, brandColor }: { top3: any[]; brandColor: string }) {
-  const podiumColors = ['#FFD700', '#C0C0C0', '#CD7F32']; // Gold, Silver, Bronze
-  const podiumHeights = ['h-32', 'h-24', 'h-20'];
-  
+function ChampionCard({
+  participant,
+}: {
+  participant: RankedParticipant;
+}) {
   return (
-    <section className="relative z-10 mb-12">
-      <h2 className="text-2xl font-bold text-gray-900 mb-8 text-center">🏆 Top Performers</h2>
-      <div className="flex justify-center items-end space-x-4 max-w-4xl mx-auto">
-        {top3.map((performer, index) => {
-          const initials = performer.name.split(" ").map((s: string) => s[0]).join("").slice(0, 2).toUpperCase();
-          const position = index === 0 ? 1 : index === 1 ? 2 : 3;
-          const actualIndex = position === 1 ? 0 : position === 2 ? 1 : 2;
-          
-          return (
-            <div key={performer.name} className="flex flex-col items-center">
-              {/* Avatar */}
-              <div className="mb-4 relative">
-                {PHOTO_BY_NAME[performer.name] ? (
-                  <img 
-                    src={PHOTO_BY_NAME[performer.name]} 
-                    alt={performer.name}
-                    className="w-20 h-20 rounded-full object-cover border-4 shadow-lg"
-                    style={{ borderColor: podiumColors[actualIndex] }}
-                  />
-                ) : (
-                  <div 
-                    className="w-20 h-20 rounded-full flex items-center justify-center text-white font-bold border-4 shadow-lg"
-                    style={{ backgroundColor: brandColor, borderColor: podiumColors[actualIndex] }}
-                  >
-                    {initials}
-                  </div>
-                )}
-                {/* Crown for 1st place */}
-                {position === 1 && (
-                  <div className="absolute -top-2 -right-2 text-2xl">👑</div>
-                )}
-              </div>
-              
-              {/* Name and Score */}
-              <div className="text-center mb-4">
-                <h3 className="font-bold text-gray-900">{performer.name}</h3>
-                <p className="text-2xl font-bold" style={{ color: brandColor }}>{performer.sum}</p>
-                <p className="text-sm text-gray-500">Avg: {performer.avg}</p>
-              </div>
-              
-              {/* Podium */}
-              <div 
-                className={`w-24 ${podiumHeights[actualIndex]} rounded-t-lg flex items-center justify-center text-white font-bold text-xl shadow-lg`}
-                style={{ backgroundColor: podiumColors[actualIndex] }}
-              >
-                {position}
-              </div>
+    <section className="glass-panel-strong relative overflow-hidden rounded-[1.8rem] px-8 py-8 animate-[fadeIn_.75s_ease-out]">
+      <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(212,175,55,0.64)_45%,transparent_100%)]" />
+      <div className="relative grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+        <div>
+          <p className="eyebrow text-sm text-[var(--accent-strong)]">Champion</p>
+          <h2 className="mt-4 text-6xl font-semibold leading-[0.92] tracking-[-0.08em] text-white sm:text-7xl">
+            {participant.name}
+          </h2>
+
+          <div className="mt-10">
+            <p className="eyebrow text-[11px] text-[var(--ink-soft)]">Score</p>
+            <p className="mt-2 text-[7rem] font-semibold leading-none tracking-[-0.13em] sm:text-[9rem]">
+              <span className="metal-text">{formatScore(participant.sum)}</span>
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <div className="stat-slab rounded-[1rem] px-4 py-4">
+              <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Rank</p>
+              <p className="mt-3 text-3xl font-semibold text-white">#1</p>
             </div>
-          );
-        })}
+            <div className="stat-slab rounded-[1rem] px-4 py-4">
+              <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Average</p>
+              <p className="mt-3 text-3xl font-semibold text-white">{formatAverage(participant.avg)}</p>
+            </div>
+            <div className="stat-slab rounded-[1rem] px-4 py-4">
+              <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Votes</p>
+              <p className="mt-3 text-3xl font-semibold text-white">{formatCount(participant.count)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative flex justify-center">
+          <div className="absolute inset-6 bg-[radial-gradient(circle,_rgba(212,175,55,0.22),_transparent_65%)] blur-3xl" />
+          <Avatar
+            participant={participant}
+            sizeClass="relative h-60 w-52 rounded-[1.6rem] border border-[rgba(255,255,255,0.08)] shadow-[0_24px_60px_rgba(0,0,0,0.4),0_0_0_1px_rgba(212,175,55,0.18)] transition-transform duration-500 hover:scale-[1.02] sm:h-72 sm:w-60"
+            fallbackClassName="relative flex items-center justify-center bg-[linear-gradient(180deg,#e2c45f_0%,#b5892e_100%)] text-7xl font-semibold text-[#1d1607]"
+          />
+        </div>
       </div>
     </section>
   );
 }
 
-// ---- Participant Card ----
-function ParticipantCard({ participant, brandColor }: { participant: any; brandColor: string }) {
-  const initials = participant.name.split(" ").map((s: string) => s[0]).join("").slice(0, 2).toUpperCase();
-  
+function TopCompactCard({
+  participant,
+  label,
+  accentColor,
+}: {
+  participant: RankedParticipant;
+  label: string;
+  accentColor: string;
+}) {
   return (
-    <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100 hover:border-gray-200 group">
-      <div className="flex items-center space-x-4">
-        {/* Rank */}
-        <div 
-          className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-md"
+    <article className="glass-panel rounded-[1.35rem] px-5 py-5 transition duration-300 hover:translate-y-[-2px] hover:border-[rgba(212,175,55,0.28)] animate-[fadeIn_.85s_ease-out]">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="eyebrow text-[11px]" style={{ color: accentColor }}>
+            {label}
+          </p>
+          <h3 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
+            {participant.name}
+          </h3>
+        </div>
+        <div className="stat-slab rounded-md px-4 py-2 text-sm text-white">
+          #{participant.rank}
+        </div>
+      </div>
+
+      <div className="mt-5 flex items-center gap-4">
+        <Avatar
+          participant={participant}
+          sizeClass="h-22 w-18 rounded-[1rem] border border-[rgba(255,255,255,0.08)]"
+          fallbackClassName="flex items-center justify-center rounded-[1rem] bg-[linear-gradient(180deg,#e2c45f_0%,#b5892e_100%)] text-3xl font-semibold text-[#1d1607]"
+        />
+
+        <div>
+          <p className="text-5xl font-semibold leading-none tracking-[-0.08em] text-white">
+            {formatScore(participant.sum)}
+          </p>
+          <p className="mt-3 text-base text-[var(--ink-soft)]">
+            Avg {formatAverage(participant.avg)}
+          </p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function TableRow({
+  participant,
+  brandColor,
+}: {
+  participant: RankedParticipant;
+  brandColor: string;
+}) {
+  const initials = getInitials(participant.name);
+
+  return (
+    <div className="grid grid-cols-[88px_minmax(0,1.6fr)_1fr_0.9fr_0.9fr] items-center gap-4 rounded-[1rem] border border-[rgba(255,255,255,0.06)] bg-[linear-gradient(180deg,rgba(26,30,40,0.94),rgba(16,19,27,0.96))] px-4 py-4 transition duration-300 hover:border-[rgba(212,175,55,0.22)]">
+      <div className="flex items-center gap-3">
+        <div
+          className="flex h-12 min-w-12 items-center justify-center rounded-md text-base font-semibold text-[#161106]"
           style={{ backgroundColor: brandColor }}
         >
           #{participant.rank}
         </div>
-        
-        {/* Avatar */}
-        {PHOTO_BY_NAME[participant.name] ? (
-          <img 
-            src={PHOTO_BY_NAME[participant.name]} 
+      </div>
+
+      <div className="flex min-w-0 items-center gap-4">
+        {participant.photoSrc ? (
+          <Image
+            src={participant.photoSrc}
             alt={participant.name}
-            className="w-16 h-16 rounded-xl object-cover shadow-md group-hover:scale-105 transition-transform"
+            width={64}
+            height={64}
+            className="h-16 w-14 rounded-[0.9rem] object-cover"
+            unoptimized
           />
         ) : (
-          <div 
-            className="w-16 h-16 rounded-xl flex items-center justify-center text-white font-semibold shadow-md group-hover:scale-105 transition-transform"
-            style={{ backgroundColor: `${brandColor}80` }}
+          <div
+            className="flex h-16 w-14 items-center justify-center rounded-[0.9rem] text-xl font-semibold text-[#1d1607]"
+            style={{ backgroundColor: brandColor }}
           >
             {initials}
           </div>
         )}
-        
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-gray-900 text-lg truncate">{participant.name}</h3>
-          <div className="flex space-x-4 mt-2">
-            <div className="text-center">
-              <p className="text-xs text-gray-500">Score</p>
-              <p className="font-bold text-lg" style={{ color: brandColor }}>{participant.sum}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-gray-500">Count</p>
-              <p className="font-semibold text-gray-700">{participant.count}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-gray-500">Average</p>
-              <p className="font-semibold text-gray-700">{participant.avg}</p>
-            </div>
-          </div>
-        </div>
+
+        <p className="truncate text-2xl font-semibold tracking-[-0.04em] text-white">
+          {participant.name}
+        </p>
+      </div>
+
+      <div className="text-right">
+        <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Score</p>
+        <p className="mt-2 text-4xl font-semibold leading-none tracking-[-0.08em] text-white">
+          {formatScore(participant.sum)}
+        </p>
+      </div>
+
+      <div className="text-right">
+        <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Avg</p>
+        <p className="mt-2 text-3xl font-semibold leading-none tracking-[-0.06em] text-[var(--ink-soft)]">
+          {formatAverage(participant.avg)}
+        </p>
+      </div>
+
+      <div className="text-right">
+        <p className="eyebrow text-[10px] text-[var(--ink-soft)]">Count</p>
+        <p className="mt-2 text-3xl font-semibold leading-none tracking-[-0.06em] text-[var(--ink-soft)]">
+          {formatCount(participant.count)}
+        </p>
       </div>
     </div>
   );
 }
 
-// ---- Main Scoreboard Component ----
-export default function Scoreboard(props: {
-  title?: string;
-  logoSrc?: string;
-  brandColor?: string;
-  csvUrl?: string;
-  apiKey?: string; 
-  sheetId?: string; 
-  range?: string;
-}) {
-  const {
-    title = "Live Scores",
-    logoSrc,
-    brandColor = "#6366f1",
-    csvUrl, 
-    apiKey, 
-    sheetId, 
-    range,
-  } = props;
-
-  const [rows, setRows] = useState<any[]>([]);
+export default function Scoreboard({
+  title = "Live Scores",
+  logoSrc,
+  brandColor = "#d4af37",
+  csvUrl,
+  apiKey,
+  sheetId,
+  range,
+  showRankingList = false,
+}: ScoreboardProps) {
+  const [rows, setRows] = useState<RankedParticipant[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | undefined>();
-  const timerRef = useRef<number | null>(null);
-
-  const fetchData = async () => {
-    try {
-      setError(null);
-      let raw: { name: string; sum: string; count: string; avg: string }[] = [];
-
-      if (csvUrl) raw = await fetchFromCSV(csvUrl);
-      else if (apiKey && sheetId && range) raw = await fetchFromSheetsApi(apiKey, sheetId, range);
-      else throw new Error("Provide csvUrl OR apiKey+sheetId+range");
-
-      const aggregated = raw.map((r) => ({
-        ...r,
-        sum: r.sum.trim(),
-        count: r.count.trim(),
-        avg: r.avg.trim(),
-        scoreNum: parseFloat(r.sum) || 0,
-      }));
-
-      const ranked = withRanks(aggregated);
-      setRows(ranked);
-      setLastUpdated(new Date());
-    } catch (e: any) {
-      setError(e.message || "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    fetchData();
-    timerRef.current = window.setInterval(fetchData, REFRESH_MS);
-    return () => { if (timerRef.current) window.clearInterval(timerRef.current); };
-  }, [csvUrl, apiKey, sheetId, range]);
+    let isActive = true;
+
+    async function loadData() {
+      try {
+        setError(null);
+
+        const [photoIndex, rawRows] = await Promise.all([
+          fetchPhotoIndex(),
+          csvUrl
+            ? fetchFromCSV(csvUrl)
+            : apiKey && sheetId && range
+              ? fetchFromSheetsApi(apiKey, sheetId, range)
+              : fetchInternalLeaderboard(),
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        const rankedRows = withRanks(
+          rawRows.map((row) => ({
+            ...row,
+            scoreNum: Number.parseFloat(row.sum) || 0,
+            photoSrc: resolvePhotoSrc(row.name, photoIndex),
+          }))
+        );
+
+        setRows(rankedRows);
+        setLastUpdated(new Date());
+      } catch (loadError: unknown) {
+        if (!isActive) {
+          return;
+        }
+
+        setError(getErrorMessage(loadError));
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadData();
+    const intervalId = window.setInterval(() => {
+      void loadData();
+    }, REFRESH_MS);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [apiKey, csvUrl, range, sheetId]);
 
   const top3 = useMemo(() => rows.slice(0, 3), [rows]);
   const remaining = useMemo(() => rows.slice(3), [rows]);
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative">
-      <BackgroundElements />
-      
-      <Header title={title} logoSrc={logoSrc} lastUpdated={lastUpdated} />
-      
-      <main className="relative z-10 max-w-7xl mx-auto px-4 py-8">
-        {loading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="text-center">
-              <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading scores...</p>
-            </div>
-          </div>
-        )}
-        
-        {error && (
-          <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-8 rounded-r-lg">
-            <div className="flex">
-              <div className="ml-3">
-                <p className="text-red-700 font-medium">Error loading data</p>
-                <p className="text-red-600 text-sm">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
+    <main className="stage-shell relative min-h-screen overflow-hidden px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-14">
+      <div className="absolute inset-x-0 top-0 h-[24rem] bg-[linear-gradient(180deg,rgba(212,175,55,0.08),transparent_70%)]" />
 
-        {rows.length > 0 && (
-          <>
-            {/* Podium for top 3 */}
-            {top3.length >= 3 && (
-              <Podium top3={top3} brandColor={brandColor} />
-            )}
-            
-            {/* All participants */}
-            <section className="relative z-10">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                📊 All Participants ({rows.length})
-              </h2>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {rows.map((participant: any) => (
-                  <ParticipantCard
-                    key={`${participant.rank}-${participant.name}`}
-                    participant={participant}
-                    brandColor={brandColor}
+      <Header
+        title={title}
+        logoSrc={logoSrc}
+        lastUpdated={lastUpdated}
+        showRankingList={showRankingList}
+      />
+
+      {loading ? (
+        <section className="mx-auto mt-10 max-w-[96rem]">
+          <div className="glass-panel-strong rounded-[1.8rem] px-6 py-16 text-center">
+            <div className="mx-auto h-1.5 w-28 overflow-hidden rounded-full bg-white/8">
+              <div className="h-full w-1/2 animate-[fadeIn_1.2s_ease-in-out_infinite_alternate] bg-[linear-gradient(90deg,var(--accent),var(--accent-strong))]" />
+            </div>
+            <p className="mt-6 text-2xl font-semibold text-white">Loading leaderboard...</p>
+          </div>
+        </section>
+      ) : null}
+
+      {error ? (
+        <section className="mx-auto mt-10 max-w-[96rem]">
+          <div className="glass-panel-strong rounded-[1.6rem] border border-[rgba(255,120,120,0.28)] px-6 py-8">
+            <p className="eyebrow text-[11px] text-[#ffc0c0]">Data issue</p>
+            <p className="mt-3 text-3xl font-semibold text-white">Unable to load live scores.</p>
+            <p className="mt-4 text-lg text-[var(--ink-soft)]">{error}</p>
+          </div>
+        </section>
+      ) : null}
+
+      {!loading && rows.length > 0 ? (
+        <>
+          {top3[0] ? (
+            <section className="mx-auto mt-10 grid max-w-[96rem] gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+              <ChampionCard participant={top3[0]} />
+              <div className="grid gap-5">
+                {top3[1] ? (
+                  <TopCompactCard
+                    participant={top3[1]}
+                    label="Second Place"
+                    accentColor="var(--silver)"
                   />
-                ))}
+                ) : null}
+                {top3[2] ? (
+                  <TopCompactCard
+                    participant={top3[2]}
+                    label="Third Place"
+                    accentColor="var(--bronze)"
+                  />
+                ) : null}
               </div>
             </section>
-          </>
-        )}
+          ) : null}
 
-        {!loading && rows.length === 0 && !error && (
-          <div className="text-center py-20">
-            <div className="text-6xl mb-4">📊</div>
-            <p className="text-xl text-gray-600 mb-2">No data found</p>
-            <p className="text-gray-500">Check your sheet headers and data source</p>
+          {showRankingList ? (
+            <section className="mx-auto mt-10 max-w-[96rem] animate-[fadeIn_1s_ease-out]">
+              <div className="mb-6 flex items-end justify-between gap-4">
+                <div>
+                  <p className="eyebrow text-sm text-[var(--accent-strong)]">Leaderboard</p>
+                  <h2 className="mt-2 text-4xl font-semibold tracking-[-0.06em] text-white">
+                    Full Ranking List
+                  </h2>
+                </div>
+                <div className="stat-slab rounded-md px-4 py-2 text-xs font-mono tracking-[0.18em] text-[var(--ink-soft)]">
+                  SCROLLABLE
+                </div>
+              </div>
+
+              <div className="glass-panel rounded-[1.4rem] p-4">
+                <div className="mb-3 grid grid-cols-[88px_minmax(0,1.6fr)_1fr_0.9fr_0.9fr] gap-4 px-4 pb-3 text-[11px] text-[var(--ink-soft)]">
+                  <div className="eyebrow">Rank</div>
+                  <div className="eyebrow">Participant</div>
+                  <div className="eyebrow text-right">Score</div>
+                  <div className="eyebrow text-right">Avg</div>
+                  <div className="eyebrow text-right">Count</div>
+                </div>
+
+                <div className="max-h-[36rem] space-y-3 overflow-y-auto pr-2">
+                  {(showRankingList ? rows : remaining).map((participant) => (
+                    <TableRow
+                      key={`${participant.rank}-${participant.name}`}
+                      participant={participant}
+                      brandColor={brandColor}
+                    />
+                  ))}
+                  {(showRankingList ? rows : remaining).length === 0 ? (
+                    <div className="rounded-[1.5rem] border border-[rgba(255,255,255,0.04)] bg-white/[0.03] px-6 py-10 text-center text-lg text-[var(--ink-soft)]">
+                      No ranking entries available right now.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          ) : null}
+        </>
+      ) : null}
+
+      {!loading && rows.length === 0 && !error ? (
+        <section className="mx-auto mt-10 max-w-[96rem]">
+          <div className="glass-panel-strong rounded-[1.6rem] px-6 py-16 text-center">
+            <p className="eyebrow text-sm text-[var(--accent-strong)]">No results yet</p>
+            <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white">
+              Waiting for the first score
+            </p>
           </div>
-        )}
-
-        {/* Footer */}
-        <footer className="mt-16 text-center text-sm text-gray-500">
-          <p>Updates automatically every {REFRESH_MS / 1000} seconds</p>
-        </footer>
-      </main>
-    </div>
+        </section>
+      ) : null}
+    </main>
   );
 }

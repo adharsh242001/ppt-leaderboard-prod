@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SessionStatus {
+  draft
+  live
+  closed
+}
+
+model Admin {
+  id           String         @id @default(cuid())
+  username     String         @unique
+  passwordHash String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  sessions     AdminSession[]
+}
+
+model AdminSession {
+  id        String   @id @default(cuid())
+  adminId    String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  admin      Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+}
+
+model Person {
+  id             String               @id @default(cuid())
+  name           String
+  normalizedName String               @unique
+  createdAt      DateTime             @default(now())
+  participants   SessionParticipant[]
+  votes          Vote[]
+}
+
+model Session {
+  id          String               @id @default(cuid())
+  title       String
+  slug        String               @unique
+  status      SessionStatus        @default(draft)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  participants SessionParticipant[]
+  submissions VoteSubmission[]
+  votes       Vote[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SessionParticipant {
+  id           String   @id @default(cuid())
+  sessionId    String
+  personId     String
+  displayOrder Int
+  createdAt    DateTime @default(now())
+  session      Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  person       Person   @relation(fields: [personId], references: [id], onDelete: Restrict)
+  votes        Vote[]
+
+  @@unique([sessionId, personId])
+  @@unique([sessionId, displayOrder])
+  @@index([personId])
+}
+
+model VoteSubmission {
+  id              String   @id @default(cuid())
+  sessionId        String
+  voterToken       String
+  voterFingerprint String?
+  ipAddress        String?
+  userAgent        String?
+  acceptLanguage   String?
+  createdAt        DateTime @default(now())
+  session          Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  votes            Vote[]
+
+  @@unique([sessionId, voterToken])
+  @@unique([sessionId, voterFingerprint])
+  @@index([createdAt])
+}
+
+model Vote {
+  id           String          @id @default(cuid())
+  sessionId     String
+  submissionId  String
+  participantId String
+  personId      String
+  score         Int
+  createdAt     DateTime       @default(now())
+  session       Session         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  submission    VoteSubmission  @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  participant   SessionParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  person        Person          @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@index([sessionId])
+  @@index([participantId])
+  @@index([personId])
+  @@index([submissionId])
+}
