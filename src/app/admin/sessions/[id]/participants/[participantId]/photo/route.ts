@@ -76,6 +76,18 @@ export async function POST(
       console.error("Supabase storage upload failed", uploadError);
     }
   } else {
+    const bytes = Buffer.from(await file.arrayBuffer());
+
+    if (process.env.VERCEL) {
+      console.error(
+        "Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY for Vercel."
+      );
+      return NextResponse.json(
+        { error: "Photo upload requires Supabase configuration. Set SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_URL." },
+        { status: 500 }
+      );
+    }
+
     const photosDir = path.join(process.cwd(), "public", "photos");
     await mkdir(photosDir, { recursive: true });
 
@@ -87,7 +99,6 @@ export async function POST(
       }
     }
 
-    const bytes = Buffer.from(await file.arrayBuffer());
     await writeFile(path.join(photosDir, finalName), bytes);
   }
 
