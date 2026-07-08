@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const REFRESH_MS = 10_000;
 const NAME_COL = "Name";
@@ -21,6 +21,12 @@ function BackgroundElements() {
 }
 
 type RawRow = { name: string; sum: string; count: string; avg: string };
+
+type RankedParticipant = RawRow & {
+  scoreNum: number;
+  rank: number;
+  photoSrc?: string;
+};
 
 function parseCSV(text: string): string[][] {
   const firstLine = text.split(/\r?\n/)[0] ?? "";
@@ -88,13 +94,17 @@ async function fetchPhotos(): Promise<Record<string, string>> {
   } catch { return {}; }
 }
 
-function withRanks<T extends { scoreNum: number }>(items: T[]) {
-  const sorted = [...items].sort((a, b) => b.scoreNum - a.scoreNum);
+function withRanks(items: RawRow[]): RankedParticipant[] {
+  const withScore = items.map(r => ({
+    ...r,
+    scoreNum: parseFloat(r.sum) || 0,
+  }));
+  const sorted = [...withScore].sort((a, b) => b.scoreNum - a.scoreNum);
   let last: number | null = null, lastRank = 0;
   return sorted.map((item, i) => {
     const rank = last === item.scoreNum ? lastRank : i + 1;
     last = item.scoreNum; lastRank = rank;
-    return { ...item, rank, photoSrc: undefined as string | undefined };
+    return { ...item, rank };
   });
 }
 
@@ -140,7 +150,7 @@ function Header({ title, logoSrc, lastUpdated, showRankingList, onToggle }: {
   );
 }
 
-function Podium({ top3, brandColor }: { top3: any[]; brandColor: string }) {
+function Podium({ top3, brandColor }: { top3: RankedParticipant[]; brandColor: string }) {
   const colors = ["#FFD700", "#C0C0C0", "#CD7F32"];
   const heights = ["h-36 sm:h-40", "h-28 sm:h-32", "h-24 sm:h-28"];
 
@@ -181,7 +191,7 @@ function Podium({ top3, brandColor }: { top3: any[]; brandColor: string }) {
   );
 }
 
-function ParticipantCard({ participant, brandColor }: { participant: any; brandColor: string }) {
+function ParticipantCard({ participant, brandColor }: { participant: RankedParticipant; brandColor: string }) {
   const initials = getInitials(participant.name);
   const photo = participant.photoSrc || PHOTO_BY_NAME[participant.name];
 
@@ -232,46 +242,48 @@ export default function Scoreboard(props: {
     showRankingList: initialShowRanking = false,
   } = props;
 
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<RankedParticipant[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | undefined>();
   const [showRanking, setShowRanking] = useState(initialShowRanking);
 
-  const loadData = async () => {
-    try {
-      setError(null);
-
-      const [photoIndex, rawRows] = await Promise.all([
-        fetchPhotos(),
-        csvUrl
-          ? fetchFromCSV(csvUrl)
-          : apiKey && sheetId && range
-            ? fetchFromSheets(apiKey, sheetId, range)
-            : fetchInternal(),
-      ]);
-
-      const processed = withRanks(
-        rawRows.map(r => ({
-          ...r,
-          scoreNum: parseFloat(r.sum) || 0,
-          photoSrc: photoIndex[r.name.toLowerCase().replace(/[\s._\-()]+/g, "")] || undefined,
-        }))
-      );
-
-      setRows(processed);
-      setLastUpdated(new Date());
-    } catch (e: any) {
-      setError(e.message || "Failed to load");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadData();
-    const id = window.setInterval(loadData, REFRESH_MS);
-    return () => window.clearInterval(id);
+    let active = true;
+
+    async function load() {
+      try {
+        setError(null);
+
+        const [photoIndex, rawRows] = await Promise.all([
+          fetchPhotos(),
+          csvUrl
+            ? fetchFromCSV(csvUrl)
+            : apiKey && sheetId && range
+              ? fetchFromSheets(apiKey, sheetId, range)
+              : fetchInternal(),
+        ]);
+
+        if (!active) return;
+
+        const ranked = withRanks(rawRows).map(r => ({
+          ...r,
+          photoSrc: photoIndex[r.name.toLowerCase().replace(/[\s._\-()]+/g, "")] || undefined,
+        }));
+
+        setRows(ranked);
+        setLastUpdated(new Date());
+      } catch (e: unknown) {
+        if (!active) return;
+        setError(e instanceof Error ? e.message : "Failed to load");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void load();
+    const id = window.setInterval(load, REFRESH_MS);
+    return () => { active = false; window.clearInterval(id); };
   }, [csvUrl, apiKey, sheetId, range]);
 
   const top3 = useMemo(() => rows.slice(0, 3), [rows]);
@@ -315,19 +327,11 @@ export default function Scoreboard(props: {
                 {showRanking ? `All Participants (${rows.length})` : "Rankings"}
               </h2>
 
-              {showRanking || remaining.length === 0 ? (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {(showRanking ? rows : remaining).map((p: any) => (
-                    <ParticipantCard key={`${p.rank}-${p.name}`} participant={p} brandColor={brandColor} />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {remaining.map((p: any) => (
-                    <ParticipantCard key={`${p.rank}-${p.name}`} participant={p} brandColor={brandColor} />
-                  ))}
-                </div>
-              )}
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {(showRanking ? rows : remaining).map((p) => (
+                  <ParticipantCard key={`${p.rank}-${p.name}`} participant={p} brandColor={brandColor} />
+                ))}
+              </div>
             </section>
           </>
         )}
