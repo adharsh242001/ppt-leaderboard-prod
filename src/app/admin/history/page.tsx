@@ -5,53 +5,50 @@ import { listSessions } from "@/lib/store";
 export default async function AdminHistoryPage() {
   await requireAdmin();
   const sessions = await listSessions();
-  const closedSessions = sessions.filter((session) => session.status === "closed");
+  const closedSessions = sessions.filter((s) => s.status === "closed");
 
   return (
-    <main className="stage-shell min-h-screen px-6 py-8">
-      <div className="mx-auto max-w-[96rem] space-y-8">
-        <div className="flex items-start justify-between gap-4">
+    <main className="min-h-screen px-4 py-8 sm:px-6 relative overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="bg-float-circle w-80 h-80 bg-indigo-200 -top-24 -right-24" />
+        <div className="bg-float-circle w-56 h-56 bg-gray-200 bottom-16 -left-20" />
+      </div>
+
+      <div className="max-w-4xl mx-auto relative space-y-6">
+        <div className="flex items-start justify-between gap-4 animate-fade-in">
           <div>
-            <p className="eyebrow text-sm text-[var(--accent-strong)]">Admin</p>
-            <h1 className="mt-3 text-5xl font-semibold tracking-[-0.06em] text-white">
-              Session history
-            </h1>
+            <p className="text-sm font-semibold text-indigo-600 tracking-wide uppercase">Admin</p>
+            <h1 className="text-2xl font-bold text-gray-900 mt-0.5">Session history</h1>
+            <p className="text-sm text-gray-500 mt-1">{closedSessions.length} closed session{closedSessions.length !== 1 ? "s" : ""}</p>
           </div>
-          <Link
-            href="/admin"
-            className="rounded-full border border-[var(--line)] bg-white/5 px-5 py-3 text-sm font-semibold text-[var(--ink-soft)] transition hover:bg-white/10"
-          >
+          <Link href="/admin" className="card rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900">
             Back to admin
           </Link>
         </div>
 
-        <div className="glass-panel rounded-[2rem] p-6">
-          <div className="space-y-4">
+        <div className="card rounded-2xl p-5 animate-fade-in animate-fade-in-d1">
+          <div className="space-y-3">
             {closedSessions.map((session) => (
-              <div
-                key={session.id}
-                className="rounded-[1.6rem] border border-[rgba(255,255,255,0.05)] bg-white/[0.03] px-5 py-5"
-              >
+              <div key={session.id} className="card rounded-xl p-4">
                 <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-2xl font-semibold text-white">{session.title}</p>
-                    <p className="mt-2 text-sm text-[var(--ink-soft)]">
-                      {session.participants.length} participants • {session.voteCount} votes
-                    </p>
-                    <p className="mt-2 text-sm text-[var(--ink-soft)]">
-                      Closed session • /vote/{session.slug}
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900">{session.title}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {session.participants.length} participant{session.participants.length !== 1 ? "s" : ""}
+                      {" · "}{session.voteCount} vote{session.voteCount !== 1 ? "s" : ""}
+                      {" · "}Closed
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 shrink-0">
                     <Link
                       href={`/admin/results/${session.id}`}
-                      className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/10"
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-600 hover:border-indigo-300 transition"
                     >
                       Results
                     </Link>
                     <Link
                       href={`/admin/sessions/${session.id}`}
-                      className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/10"
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-600 hover:border-indigo-300 transition"
                     >
                       Session
                     </Link>
@@ -59,9 +56,9 @@ export default async function AdminHistoryPage() {
                 </div>
               </div>
             ))}
-            {closedSessions.length === 0 ? (
-              <p className="text-lg text-[var(--ink-soft)]">No closed sessions yet.</p>
-            ) : null}
+            {closedSessions.length === 0 && (
+              <p className="text-center py-10 text-sm text-gray-400">No closed sessions yet.</p>
+            )}
           </div>
         </div>
       </div>

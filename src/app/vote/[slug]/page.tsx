@@ -9,75 +9,80 @@ export default async function VotePage({
   searchParams: Promise<{ p?: string }>;
 }) {
   const { slug } = await params;
-  const { p: highlightParticipantId } = await searchParams;
+  const { p: targetParticipantId } = await searchParams;
   const session = await getSessionBySlug(slug);
 
-  if (!session) {
-    notFound();
-  }
+  if (!session) notFound();
+
+  const participants = targetParticipantId
+    ? session.participants.filter((p) => p.participantId === targetParticipantId)
+    : session.participants;
+
+  const targetName = targetParticipantId
+    ? session.participants.find((p) => p.participantId === targetParticipantId)?.name
+    : null;
+
+  if (targetParticipantId && participants.length === 0) notFound();
 
   return (
-    <main className="stage-shell min-h-screen px-4 py-6 sm:px-6">
-      <div className="mx-auto max-w-2xl">
-        <div className="glass-panel-strong rounded-xl px-5 py-6 sm:px-6">
-          <p className="eyebrow text-[11px] text-[var(--accent-strong)]">Vote now</p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-white sm:text-3xl">
-            {session.title}
+    <main className="min-h-screen px-4 py-8 sm:px-6 relative overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="bg-float-circle w-80 h-80 bg-indigo-200 -top-24 -right-24" />
+        <div className="bg-float-circle w-56 h-56 bg-purple-200 bottom-12 -left-20" />
+      </div>
+
+      <div className="max-w-lg mx-auto relative animate-fade-in">
+        <div className="card-strong rounded-2xl p-6 sm:p-8">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+            <p className="text-xs font-semibold text-green-600 tracking-wide uppercase">Vote now</p>
+          </div>
+
+          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl mt-1">
+            {targetName ? `${targetName}` : session.title}
           </h1>
-          <p className="mt-1 text-sm text-[var(--ink-soft)]">
-            Rate each participant from 1 to 10.
-          </p>
+          {!targetName && (
+            <p className="text-sm text-gray-500 mt-1">Rate each participant from 1 to 10.</p>
+          )}
 
-          <form action={`/vote/${session.slug}/submit`} method="post" className="mt-5 space-y-2">
-            {session.participants.map((participant) => {
-              const isHighlighted = highlightParticipantId === participant.participantId;
-              return (
-                <div
-                  key={participant.participantId}
-                  id={`p-${participant.participantId}`}
-                  className={`rounded-xl border px-4 py-3 transition ${
-                    isHighlighted
-                      ? "border-[var(--accent)] bg-[rgba(212,175,55,0.06)]"
-                      : "border-[rgba(255,255,255,0.05)] bg-white/[0.03]"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-lg font-semibold text-white">
-                        {isHighlighted && (
-                          <span className="inline-block mr-2 rounded bg-[var(--accent)] px-1.5 py-0.5 text-[10px] font-bold text-[#20170a] uppercase">
-                            Now voting
-                          </span>
-                        )}
-                        {participant.name}
-                      </p>
-                    </div>
-
-                    <select
-                      name={`score:${participant.participantId}`}
-                      className={`shrink-0 rounded-xl border px-3 py-2 text-base text-white outline-none ${
-                        isHighlighted
-                          ? "border-[var(--accent)] bg-[#0b1628]"
-                          : "border-[var(--line)] bg-[#0b1628]"
-                      }`}
-                      defaultValue=""
-                      required
-                    >
-                      <option value="" disabled>Score</option>
-                      {Array.from({ length: 10 }, (_, i) => i + 1).map((score) => (
-                        <option key={score} value={score}>{score}</option>
-                      ))}
-                    </select>
+          <form action={`/vote/${session.slug}/submit`} method="post" className="mt-6 space-y-3">
+            {participants.map((participant) => (
+              <div
+                key={participant.participantId}
+                className={`rounded-xl border p-4 ${targetParticipantId
+                  ? "border-indigo-200 bg-indigo-50/50"
+                  : "border-gray-100 bg-white/50"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-900">
+                      {participant.name}
+                    </p>
+                    {!targetParticipantId && (
+                      <p className="text-xs text-gray-400 mt-0.5">Give a score</p>
+                    )}
                   </div>
+                  <select
+                    name={`score:${participant.participantId}`}
+                    className="shrink-0 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"
+                    defaultValue=""
+                    required
+                  >
+                    <option value="" disabled>Score</option>
+                    {Array.from({ length: 10 }, (_, i) => i + 1).map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
                 </div>
-              );
-            })}
+              </div>
+            ))}
 
             <button
               type="submit"
-              className="mt-4 w-full rounded-xl bg-[var(--accent)] px-5 py-3 text-base font-semibold text-[#20170a] transition hover:brightness-105"
+              className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-3 text-base font-semibold text-white shadow-md hover:shadow-lg hover:brightness-110 transition"
             >
-              Submit votes
+              Submit vote{participants.length > 1 ? "s" : ""}
             </button>
           </form>
         </div>
