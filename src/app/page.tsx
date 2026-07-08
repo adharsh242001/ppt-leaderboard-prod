@@ -7,8 +7,7 @@ export default async function Home() {
     <Scoreboard
       title="PPT Leaderboard"
       logoSrc="/Logo.png"
-      brandColor="#b85d32"
-      showRankingList={false}
+      brandColor="#6366f1"
     />
   );
 }

@@ -1,3 +1,5 @@
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { getParticipantFromSession } from "@/lib/store";
@@ -7,6 +9,10 @@ import {
   normalizeParticipantName,
 } from "@/lib/photoMatching";
 import { supabaseAdmin, STORAGE_BUCKET, isSupabaseConfigured } from "@/lib/supabase";
+
+function sanitizeFileName(value: string) {
+  return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, "").trim();
+}
 
 export async function POST(
   request: Request,
@@ -35,45 +41,54 @@ export async function POST(
     return NextResponse.redirect(new URL(`/admin/sessions/${id}`, request.url));
   }
 
-  if (!isSupabaseConfigured || !supabaseAdmin) {
-    console.error("Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
-    return NextResponse.redirect(new URL(`/admin/sessions/${id}`, request.url));
-  }
-
   const normalizedName = normalizeParticipantName(participant.name);
-
-  const { data: existingFiles } = await supabaseAdmin.storage
-    .from(STORAGE_BUCKET)
-    .list();
-
-  if (existingFiles) {
-    const oldFiles = existingFiles.filter((entry) => {
-      if (!isSupportedPhotoFile(entry.name)) return false;
-      return getPhotoBaseName(entry.name) === normalizedName;
-    });
-
-    if (oldFiles.length > 0) {
-      await supabaseAdmin.storage
-        .from(STORAGE_BUCKET)
-        .remove(oldFiles.map((f) => f.name));
-    }
-  }
-
-  const ext = file.name.toLowerCase().match(/\.(avif|gif|jpe?g|png|webp)$/)?.[0] ?? ".jpg";
-  const baseName = participant.name.trim().replace(/\s+/g, "-").replace(/[<>:"/\\|?*\u0000-\u001F]/g, "") || participant.personId;
+  const ext = path.extname(file.name).toLowerCase() || ".jpg";
+  const baseName = sanitizeFileName(participant.name).replace(/\s+/g, "-") || participant.personId;
   const finalName = `${baseName}${ext}`;
 
-  const bytes = Buffer.from(await file.arrayBuffer());
+  if (isSupabaseConfigured && supabaseAdmin) {
+    const { data: existingFiles } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .list();
 
-  const { error: uploadError } = await supabaseAdmin.storage
-    .from(STORAGE_BUCKET)
-    .upload(finalName, bytes, {
-      contentType: file.type || "image/jpeg",
-      upsert: true,
-    });
+    if (existingFiles) {
+      const oldFiles = existingFiles.filter((entry) => {
+        if (!isSupportedPhotoFile(entry.name)) return false;
+        return getPhotoBaseName(entry.name) === normalizedName;
+      });
 
-  if (uploadError) {
-    console.error("Supabase storage upload failed", uploadError);
+      if (oldFiles.length > 0) {
+        await supabaseAdmin.storage
+          .from(STORAGE_BUCKET)
+          .remove(oldFiles.map((f) => f.name));
+      }
+    }
+
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .upload(finalName, bytes, {
+        contentType: file.type || "image/jpeg",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error("Supabase storage upload failed", uploadError);
+    }
+  } else {
+    const photosDir = path.join(process.cwd(), "public", "photos");
+    await mkdir(photosDir, { recursive: true });
+
+    const entries = await readdir(photosDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !isSupportedPhotoFile(entry.name)) continue;
+      if (getPhotoBaseName(entry.name) === normalizedName) {
+        await rm(path.join(photosDir, entry.name), { force: true });
+      }
+    }
+
+    const bytes = Buffer.from(await file.arrayBuffer());
+    await writeFile(path.join(photosDir, finalName), bytes);
   }
 
   return NextResponse.redirect(new URL(`/admin/sessions/${id}`, request.url));

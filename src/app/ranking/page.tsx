@@ -7,7 +7,7 @@ export default async function RankingPage() {
     <Scoreboard
       title="PPT Leaderboard"
       logoSrc="/Logo.png"
-      brandColor="#b85d32"
+      brandColor="#6366f1"
       showRankingList
     />
   );
