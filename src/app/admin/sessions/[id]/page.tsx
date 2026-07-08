@@ -6,6 +6,23 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { getSessionById } from "@/lib/store";
 
+function QrDownloadButton({ dataUrl, fileName }: { dataUrl: string; fileName: string }) {
+  return (
+    <a
+      href={dataUrl}
+      download={fileName}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-[var(--ink-soft)] transition hover:bg-white/10 hover:text-white"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+      </svg>
+      Download
+    </a>
+  );
+}
+
 export default async function SessionPage({
   params,
 }: {
@@ -22,127 +39,184 @@ export default async function SessionPage({
   const headerStore = await headers();
   const host = headerStore.get("host") ?? "localhost:3000";
   const protocol = headerStore.get("x-forwarded-proto") ?? "http";
-  const voteUrl = `${protocol}://${host}/vote/${session.slug}`;
-  const qrDataUrl = await QRCode.toDataURL(voteUrl, {
+  const baseUrl = `${protocol}://${host}`;
+  const voteUrl = `${baseUrl}/vote/${session.slug}`;
+
+  const sessionQrDataUrl = await QRCode.toDataURL(voteUrl, {
     margin: 1,
-    color: {
-      dark: "#f1c765",
-      light: "#07111f",
-    },
-    width: 260,
+    color: { dark: "#f1c765", light: "#07111f" },
+    width: 200,
   });
 
+  const participantQrs = await Promise.all(
+    session.participants.map(async (p) => {
+      const url = `${voteUrl}?p=${p.participantId}`;
+      const dataUrl = await QRCode.toDataURL(url, {
+        margin: 1,
+        color: { dark: "#f1c765", light: "#07111f" },
+        width: 120,
+      });
+      return { ...p, qrDataUrl: dataUrl, qrUrl: url };
+    })
+  );
+
   return (
-    <main className="stage-shell min-h-screen px-6 py-8">
-      <div className="mx-auto max-w-[96rem] space-y-8">
+    <main className="stage-shell min-h-screen px-4 py-6 sm:px-6">
+      <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow text-sm text-[var(--accent-strong)]">Session</p>
-            <h1 className="mt-3 text-5xl font-semibold tracking-[-0.06em] text-white">
+          <div className="min-w-0">
+            <p className="eyebrow text-[11px] text-[var(--accent-strong)]">Session</p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-white sm:text-3xl truncate">
               {session.title}
             </h1>
-            <p className="mt-3 text-lg text-[var(--ink-soft)]">Status: {session.status}</p>
+            <p className="mt-1 text-sm text-[var(--ink-soft)]">
+              Status: <span className="text-white capitalize">{session.status}</span>
+              {" · "}{session.participants.length} participant{session.participants.length !== 1 ? "s" : ""}
+              {" · "}{session.voteCount} vote{session.voteCount !== 1 ? "s" : ""}
+            </p>
           </div>
-          <Link
-            href="/admin"
-            className="rounded-full border border-[var(--line)] bg-white/5 px-5 py-3 text-sm font-semibold text-[var(--ink-soft)] transition hover:bg-white/10"
-          >
-            Back
-          </Link>
+          <div className="flex shrink-0 gap-2">
+            <Link
+              href={`/admin/results/${session.id}`}
+              className="rounded-lg border border-[var(--line)] bg-white/5 px-3 py-2 text-xs font-semibold text-[var(--ink-soft)] transition hover:bg-white/10 hover:text-white"
+            >
+              Results
+            </Link>
+            <Link
+              href="/admin"
+              className="rounded-lg border border-[var(--line)] bg-white/5 px-3 py-2 text-xs font-semibold text-[var(--ink-soft)] transition hover:bg-white/10 hover:text-white"
+            >
+              Back
+            </Link>
+          </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
-          <div className="glass-panel-strong rounded-[2rem] p-6">
-            <p className="eyebrow text-sm text-[var(--accent-strong)]">Voting QR</p>
-            <div className="mt-5 rounded-[1.8rem] border border-[var(--line)] bg-[#07111f] p-4">
-              <Image src={qrDataUrl} alt="Voting QR" width={260} height={260} className="h-auto w-full rounded-2xl" unoptimized />
-            </div>
-            <p className="mt-4 break-all text-sm text-[var(--ink-soft)]">{voteUrl}</p>
-            <div className="mt-5 flex gap-3">
-              <form action={`/admin/sessions/${session.id}/status`} method="post">
-                <input type="hidden" name="status" value="live" />
-                <button className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[#20170a]">
-                  Open voting
-                </button>
-              </form>
-              <form action={`/admin/sessions/${session.id}/status`} method="post">
-                <input type="hidden" name="status" value="closed" />
-                <button className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-sm font-semibold text-white">
-                  Close voting
-                </button>
-              </form>
-              <Link
-                href={`/admin/results/${session.id}`}
-                className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-sm font-semibold text-white"
-              >
-                View results
-              </Link>
+        <div className="flex flex-wrap gap-3">
+          <form action={`/admin/sessions/${session.id}/status`} method="post">
+            <input type="hidden" name="status" value="live" />
+            <button
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                session.status === "live"
+                  ? "bg-[rgba(255,70,70,0.12)] text-[#ffc0c0] border border-[rgba(255,120,120,0.28)]"
+                  : "bg-[var(--accent)] text-[#20170a] hover:brightness-105"
+              }`}
+            >
+              {session.status === "live" ? "● Live" : "Open voting"}
+            </button>
+          </form>
+          {session.status !== "closed" && (
+            <form action={`/admin/sessions/${session.id}/status`} method="post">
+              <input type="hidden" name="status" value="closed" />
+              <button className="rounded-lg border border-[var(--line)] bg-white/5 px-4 py-2 text-sm font-semibold text-[var(--ink-soft)] transition hover:bg-white/10 hover:text-white">
+                Close voting
+              </button>
+            </form>
+          )}
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[1fr_1.5fr]">
+          <div className="glass-panel rounded-xl p-4">
+            <p className="eyebrow text-[11px] text-[var(--accent-strong)]">Session QR</p>
+            <p className="mt-1 text-xs text-[var(--ink-soft)] break-all">{voteUrl}</p>
+            <div className="mt-3 flex items-start gap-4">
+              <div className="shrink-0 rounded-xl border border-[var(--line)] bg-[#07111f] p-2">
+                <Image src={sessionQrDataUrl} alt="Voting QR" width={200} height={200} className="h-28 w-28 rounded-lg" unoptimized />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs text-[var(--ink-soft)]">Point your audience here</p>
+                <div className="flex gap-2">
+                  <QrDownloadButton dataUrl={sessionQrDataUrl} fileName={`session-${session.slug}.png`} />
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="glass-panel rounded-[2rem] p-6">
-            <p className="eyebrow text-sm text-[var(--accent-strong)]">Participants</p>
-            <form action={`/admin/sessions/${session.id}/participants`} method="post" className="mt-5 flex gap-4">
+          <div className="glass-panel rounded-xl p-4">
+            <p className="eyebrow text-[11px] text-[var(--accent-strong)]">Add participant</p>
+            <form action={`/admin/sessions/${session.id}/participants`} method="post" className="mt-3 flex gap-2">
               <input
                 type="text"
                 name="name"
                 placeholder="Participant name"
-                className="flex-1 rounded-2xl border border-[var(--line)] bg-white/5 px-4 py-4 text-lg text-white outline-none placeholder:text-[var(--ink-soft)]"
+                className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-[var(--ink-soft)]"
                 required
               />
               <button
                 type="submit"
-                className="rounded-2xl bg-[var(--accent)] px-6 py-4 text-lg font-semibold text-[#20170a]"
+                className="shrink-0 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[#20170a] transition hover:brightness-105"
               >
                 Add
               </button>
             </form>
+          </div>
+        </div>
 
-            <div className="mt-6 space-y-3">
-              {session.participants.map((participant) => (
+        <div>
+          <p className="eyebrow mb-3 text-[11px] text-[var(--accent-strong)]">Participants</p>
+
+          {session.participants.length === 0 ? (
+            <div className="glass-panel rounded-xl p-6 text-center text-sm text-[var(--ink-soft)]">
+              No participants yet. Add one above.
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {participantQrs.map((participant) => (
                 <div
                   key={participant.participantId}
-                  className="rounded-[1.5rem] border border-[rgba(255,255,255,0.05)] bg-white/[0.03] px-5 py-4 text-lg text-white"
+                  className="glass-panel rounded-xl p-3 transition hover:border-[rgba(255,255,255,0.12)]"
                 >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      {participant.displayOrder}. {participant.name}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-base font-semibold text-white truncate">
+                        <span className="text-[var(--ink-soft)] font-normal">{participant.displayOrder}.</span>{" "}
+                        {participant.name}
+                      </p>
                     </div>
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                      <form
-                        action={`/admin/sessions/${session.id}/participants/${participant.participantId}/photo`}
-                        method="post"
-                        encType="multipart/form-data"
-                        className="flex flex-col gap-3 sm:flex-row sm:items-center"
+                    <form
+                      action={`/admin/sessions/${session.id}/participants/${participant.participantId}/delete`}
+                      method="post"
+                    >
+                      <button className="shrink-0 rounded-lg border border-[rgba(255,120,120,0.2)] bg-[rgba(255,70,70,0.06)] px-2 py-1 text-[11px] font-semibold text-[#ffa0a0] transition hover:bg-[rgba(255,70,70,0.14)]">
+                        Remove
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="mt-3 flex items-start gap-3">
+                    <div className="shrink-0 rounded-lg border border-[var(--line)] bg-[#07111f] p-1">
+                      <Image src={participant.qrDataUrl} alt={`${participant.name} QR`} width={120} height={120} className="h-16 w-16 rounded-md" unoptimized />
+                    </div>
+                    <div className="min-w-0 space-y-1.5">
+                      <a
+                        href={participant.qrUrl}
+                        className="block truncate text-[11px] text-[var(--ink-soft)] hover:text-white"
+                        target="_blank"
                       >
-                        <input
-                          type="file"
-                          name="photo"
-                          accept=".jpg,.jpeg,.png,.webp,.gif,.avif"
-                          className="max-w-xs rounded-xl border border-[var(--line)] bg-white/5 px-3 py-2 text-sm text-[var(--ink-soft)]"
-                          required
-                        />
-                        <button className="rounded-full border border-[var(--line)] bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10">
-                          Upload photo
-                        </button>
-                      </form>
-                      <form
-                        action={`/admin/sessions/${session.id}/participants/${participant.participantId}/delete`}
-                        method="post"
-                      >
-                        <button className="rounded-full border border-[rgba(255,120,120,0.28)] bg-[rgba(255,70,70,0.1)] px-4 py-2 text-sm font-semibold text-[#ffc0c0] transition hover:bg-[rgba(255,70,70,0.16)]">
-                          Remove
-                        </button>
-                      </form>
+                        {participant.qrUrl}
+                      </a>
+                      <div className="flex flex-wrap gap-1.5">
+                        <QrDownloadButton dataUrl={participant.qrDataUrl} fileName={`${participant.name.replace(/\s+/g, "-")}-qr.png`} />
+                        <form
+                          action={`/admin/sessions/${session.id}/participants/${participant.participantId}/photo`}
+                          method="post"
+                          encType="multipart/form-data"
+                          className="inline-flex items-center gap-1.5"
+                        >
+                          <label className="cursor-pointer rounded-lg border border-[var(--line)] bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-[var(--ink-soft)] transition hover:bg-white/10 hover:text-white">
+                            Photo
+                            <input type="file" name="photo" accept=".jpg,.jpeg,.png,.webp,.gif,.avif" className="hidden" required />
+                          </label>
+                          <button className="rounded-lg border border-[var(--line)] bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-[var(--ink-soft)] transition hover:bg-white/10 hover:text-white">
+                            Upload
+                          </button>
+                        </form>
+                      </div>
                     </div>
                   </div>
                 </div>
               ))}
-              {session.participants.length === 0 ? (
-                <p className="text-lg text-[var(--ink-soft)]">No participants yet.</p>
-              ) : null}
             </div>
-          </div>
+          )}
         </div>
       </div>
     </main>
