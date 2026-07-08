@@ -1,462 +1,294 @@
 # PPT Leaderboard
 
-This is a single `Next.js` app for running live presentation voting with:
-- private admin pages
-- public QR-based voting sessions
-- a private podium screen
-- a private full ranking screen
-- PostgreSQL persistence through Prisma
-- Docker deployment with the app and database in one stack
+A live presentation voting and leaderboard app built with **Next.js 15**, **React 19**, **TypeScript**, **Tailwind CSS v4**, and **PostgreSQL** (via **Prisma**).
 
-The app is now structured the production-friendly way for this project:
-- `same repo for frontend + backend`: yes
-- `same deployable app`: yes
-- `separate PostgreSQL database service`: yes
+## Overview
 
-## What It Does
+Three user interfaces in a single app:
 
-The workflow is:
-
-1. Admin signs in.
-2. Admin creates a presentation session.
-3. Admin adds participants.
-4. Admin uploads participant photos if needed.
-5. Admin opens voting for that session.
-6. Audience scans the QR and votes on `/vote/[slug]`.
-7. Private scoreboard pages show the overall leaderboard.
-8. Admin can review history and session-level results.
+| Role | Routes | Description |
+|---|---|---|
+| **Admin** | `/admin/*`, `/login` | Create sessions, add participants, upload photos, manage voting lifecycle, view results |
+| **Voter** | `/vote/[slug]` | Public — scan QR code, rate participants 1–10, submit once per device per session |
+| **Display** | `/`, `/scoreboard`, `/ranking` | Private — live podium scoreboard with champion, top 3, and full ranking list |
 
 ## Architecture
 
-### Frontend
+```
+Browser ──► Next.js App (Node.js 22)
+              ├── App Router pages    (admin, vote, scoreboard, ranking)
+              ├── API routes          (/api/health, /api/leaderboard, /api/photos)
+              └── lib/store.ts        (data access layer)
+                       │
+              Prisma Client (lib/db.ts)
+                       │
+              PostgreSQL 16 (Docker)
+```
 
-Main UI:
-- `src/components/Scoreboard.tsx`
+- **Monolith**: Frontend + backend in a single Next.js deployable unit.
+- **No separate API server**: All logic lives in Next.js server actions, API routes, and utility modules.
+- **Dockerized**: App + PostgreSQL in one Compose stack, optional Nginx + Let's Encrypt.
 
-Admin pages:
-- `src/app/admin/...`
+## Tech Stack
 
-Public vote pages:
-- `src/app/vote/...`
+| Category | Choice |
+|---|---|
+| Framework | Next.js 15.5.6 (App Router, Turbopack) |
+| Language | TypeScript 5 |
+| UI | React 19, Tailwind CSS v4 |
+| Fonts | Manrope (sans), IBM Plex Mono (mono) via next/font |
+| Database | PostgreSQL 16 (via `postgres:16-alpine`) |
+| ORM | Prisma 6 + Prisma Client |
+| Auth | bcryptjs (password hash), SHA-256 HMAC (session tokens), HTTP-only cookies |
+| QR | `qrcode` npm package (server-side generation) |
+| Container | Docker multi-stage build (`node:22-bookworm-slim`) |
+| Proxy (opt.) | nginx-proxy + acme-companion (auto Let's Encrypt) |
 
-Private display pages:
-- `src/app/page.tsx`
-- `src/app/scoreboard/page.tsx`
-- `src/app/ranking/page.tsx`
+## Project Structure
 
-### Backend
+```
+.
+├── prisma/
+│   └── schema.prisma              # Database schema (7 models, 1 enum)
+├── public/
+│   ├── Logo.png                   # Brand logo for scoreboard
+│   └── photos/                    # Uploaded participant photos
+├── src/
+│   ├── app/                       # Next.js App Router
+│   │   ├── admin/                 #   Admin pages & action routes
+│   │   ├── api/                   #   JSON API routes (health, leaderboard, photos)
+│   │   ├── auth/login/route.ts    #   Login form POST handler
+│   │   ├── login/page.tsx         #   Login page
+│   │   ├── logout/route.ts        #   Logout POST handler
+│   │   ├── vote/[slug]/           #   Public voting pages & submit handler
+│   │   ├── scoreboard/page.tsx    #   Podium scoreboard
+│   │   ├── ranking/page.tsx       #   Full ranking list
+│   │   ├── page.tsx               #   Home (scoreboard, admin-protected)
+│   │   ├── layout.tsx             #   Root layout
+│   │   ├── globals.css            #   Tailwind + custom dark theme
+│   │   └── not-found.tsx          #   404 page
+│   ├── components/
+│   │   └── Scoreboard.tsx         # Client-side live scoreboard (auto-refresh)
+│   ├── lib/
+│   │   ├── auth.ts                # Admin auth (bcrypt, session tokens, cookies)
+│   │   ├── db.ts                  # Prisma client singleton
+│   │   ├── store.ts               # Data access layer (all DB queries)
+│   │   └── photoMatching.ts       # Photo filename normalization
+│   └── types/
+│       └── qrcode.d.ts            # TypeScript declaration for qrcode
+├── Dockerfile                     # Multi-stage Docker build
+├── docker-compose.yml             # App + PostgreSQL stack
+├── docker-compose.proxy.yml       # Optional Nginx + HTTPS layer
+├── docker-entrypoint.sh           # Waits for DB, runs prisma db push, starts server
+├── deploy.sh                      # One-command deployment script
+└── .env.example                   # Environment variables template
+```
 
-The backend lives inside the same Next.js app using server routes and server utilities.
+## Database Schema
 
-Core backend files:
-- `src/lib/store.ts`
-- `src/lib/auth.ts`
-- `src/lib/db.ts`
-- `prisma/schema.prisma`
+7 models in `prisma/schema.prisma`:
 
-### Database
+| Model | Purpose | Key Constraints |
+|---|---|---|
+| **Admin** | Single admin account | `username` unique |
+| **AdminSession** | Login sessions (7-day expiry) | `tokenHash` unique; cascade delete on Admin |
+| **Person** | Global participant registry | `normalizedName` unique |
+| **Session** | Presentation voting session | `slug` unique; status in draft/live/closed |
+| **SessionParticipant** | Links Person to Session | `[sessionId, personId]` unique; `[sessionId, displayOrder]` unique |
+| **VoteSubmission** | One device's submission per session | `[sessionId, voterToken]` unique; `[sessionId, voterFingerprint]` unique |
+| **Vote** | Individual score for one participant | Indexed on sessionId, participantId, personId, submissionId |
 
-The app now uses:
-- PostgreSQL
-- Prisma Client
-- Prisma schema in `prisma/schema.prisma`
+**SessionStatus enum**: `draft` → `live` → `closed`
 
-Main tables/models:
-- `Admin`
-- `AdminSession`
-- `Person`
-- `Session`
-- `SessionParticipant`
-- `VoteSubmission`
-- `Vote`
+## Routes
 
-## Current Routes
+### Page Routes
 
-Private:
-- `/login`
-- `/admin`
-- `/admin/history`
-- `/admin/sessions/[id]`
-- `/admin/results/[id]`
-- `/`
-- `/scoreboard`
-- `/ranking`
+| Path | Auth | Description |
+|---|---|---|
+| `/login` | None | Admin login form |
+| `/admin` | Admin | Dashboard — create sessions, manage existing ones |
+| `/admin/history` | Admin | View closed sessions |
+| `/admin/sessions/[id]` | Admin | Session detail — QR code, participants, photo upload |
+| `/admin/results/[id]` | Admin | Per-session leaderboard with scores |
+| `/` | Admin | Home page (podium scoreboard) |
+| `/scoreboard` | Admin | Podium scoreboard |
+| `/ranking` | Admin | Full ranking list with scrollable table |
+| `/vote/[slug]` | None | Public voting form |
+| `/vote/[slug]/done` | None | "Thank you" confirmation |
 
-Public:
-- `/vote/[slug]`
-- `/vote/[slug]/done`
+### Action Routes (form POST handlers)
 
-Action/API routes:
-- `/auth/login`
-- `/logout`
-- `/admin/sessions/create`
-- `/admin/sessions/[id]/participants`
-- `/admin/sessions/[id]/participants/[participantId]/delete`
-- `/admin/sessions/[id]/participants/[participantId]/photo`
-- `/admin/sessions/[id]/status`
-- `/vote/[slug]/submit`
-- `/api/leaderboard`
-- `/api/photos`
-- `/api/health`
+| Path | Method | Purpose |
+|---|---|---|
+| `/auth/login` | POST | Authenticate admin, set session cookie |
+| `/logout` | POST | Destroy session, clear cookie |
+| `/admin/sessions/create` | POST | Create a new session |
+| `/admin/sessions/[id]/status` | POST | Update session status (draft/live/closed) |
+| `/admin/sessions/[id]/participants` | POST | Add a participant |
+| `/admin/sessions/[id]/participants/[pid]/delete` | POST | Remove a participant |
+| `/admin/sessions/[id]/participants/[pid]/photo` | POST | Upload a participant photo |
+| `/vote/[slug]/submit` | POST | Submit votes (with fairness enforcement) |
 
-## Auth
+### API Routes (JSON)
 
-Auth is handled in `src/lib/auth.ts`.
+| Path | Method | Auth | Purpose |
+|---|---|---|---|
+| `/api/health` | GET | None | Health check (DB connectivity + timestamp) |
+| `/api/leaderboard` | GET | Admin cookie | Global leaderboard (all sessions aggregated) |
+| `/api/photos` | GET | None | Photo index map (normalized name → URL path) |
 
-Current behavior:
-- one admin account is bootstrapped from environment variables
-- login creates a DB-backed admin session
-- the browser stores only the raw session token in a secure cookie
-- the database stores only the hashed session token
+## Authentication
 
-Environment variables used:
-- `ADMIN_USERNAME`
-- `ADMIN_PASSWORD`
-- `SESSION_SECRET`
+Handled in `src/lib/auth.ts`.
 
-If the configured admin does not exist yet, the app creates it automatically on first auth use.
+- **Bootstrap**: On first use, a single admin account is upserted from `ADMIN_USERNAME` / `ADMIN_PASSWORD` env vars (password hashed with bcrypt cost 12).
+- **Login**: Admin submits password → verified against bcrypt hash → random 32-byte token generated → SHA-256 HMAC-hashed (with `SESSION_SECRET` pepper) → stored in `AdminSession` table → raw token set as HTTP-only cookie (`ppt-admin-session`).
+- **Validation**: Protected pages call `requireAdmin()` → reads cookie → hashes it → looks up in DB → checks expiry (7 days). Expired sessions are auto-deleted.
+- **Logout**: POST to `/logout` → destroys session in DB → deletes cookie.
 
-## Vote Fairness
+## Voting Fairness
 
-The app currently allows one submission per device per session using:
-- a per-session voter cookie token
-- a hashed fingerprint based on IP address, user agent, and accept-language
+Each device can vote once per session via two mechanisms:
 
-That data is stored through:
-- `VoteSubmission`
-- `Vote`
+1. **Voter cookie**: A per-session UUID (`vote-{slug}`) set on first submission. Subsequent submissions with the same cookie are rejected (unique constraint on `[sessionId, voterToken]`).
+2. **Browser fingerprint**: SHA-256 hash of IP + User-Agent + Accept-Language. Unique constraint on `[sessionId, voterFingerprint]` prevents abuse even if cookies are cleared.
 
-This is a practical fairness layer for live events, but it is not full anti-fraud protection.
+Votes are only accepted for sessions with `live` status.
+
+## Scoreboard Component
+
+`src/components/Scoreboard.tsx` — the main client-side display component:
+
+- **Data sources** (in priority order):
+  1. CSV URL (if `csvUrl` prop provided) — fetches and parses CSV
+  2. Google Sheets API (if `apiKey` + `sheetId` + `range` provided)
+  3. Internal API (`/api/leaderboard`) — defaults to global aggregation
+- **Auto-refresh**: Polls every 10 seconds
+- **Photo matching**: Fetches `/api/photos` → normalizes names → matches participant to photo
+- **Ranking**: Standard competition ranking (ties share same rank, next rank skips ahead)
+- **Rendering**: Champion card (gold), 2nd place (silver), 3rd place (bronze), plus optional scrollable ranking table
 
 ## Photo Handling
 
-Photos are stored in:
-
-`public/photos`
-
-Matching is automatic:
-- participant names are normalized
-- photo filenames are normalized
-- if a photo matches, it appears on the scoreboard
-- if not, initials are shown
-
-Relevant files:
-- `src/lib/photoMatching.ts`
-- `src/app/api/photos/route.ts`
-- `src/app/admin/sessions/[id]/participants/[participantId]/photo/route.ts`
+- Photos stored in `public/photos/` (mounted as a Docker volume for persistence)
+- Upload via admin session page (multipart form POST to `/admin/sessions/[id]/participants/[pid]/photo`)
+- Matching: participant names and photo filenames are normalized (strip spaces, dots, underscores, parentheses, hyphens) → matched via `/api/photos` index
+- Supported formats: avif, gif, jpg, jpeg, png, webp
+- On re-upload: old photos matching the same normalized name are automatically cleaned up
 
 ## Environment Variables
 
-Copy the template first:
+### Required
 
-```bash
-cp .env.example .env
-```
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | Prisma connection string (used outside Docker) |
+| `POSTGRES_DB` | PostgreSQL database name |
+| `POSTGRES_USER` | PostgreSQL user |
+| `POSTGRES_PASSWORD` | PostgreSQL password |
+| `ADMIN_USERNAME` | Admin login username |
+| `ADMIN_PASSWORD` | Admin login password |
+| `SESSION_SECRET` | Pepper for session token hashing (min 32 chars, use random) |
 
-For a real VPS deployment, use:
+### Optional
 
-```bash
-cp .env.production.example .env
-```
-
-Important values:
-
-- `DATABASE_URL`
-- `POSTGRES_DB`
-- `POSTGRES_USER`
-- `POSTGRES_PASSWORD`
-- `ADMIN_USERNAME`
-- `ADMIN_PASSWORD`
-- `SESSION_SECRET`
-
-Notes:
-- `DATABASE_URL` in `.env` is meant for local CLI usage from your machine.
-- inside Docker Compose, the app container gets its own internal `DATABASE_URL` that points to the `postgres` service.
+| Variable | Default | Description |
+|---|---|---|
+| `NODE_ENV` | `production` | Controls Prisma log level & cookie `secure` flag |
+| `PORT` | `3000` | Internal port for Next.js server |
+| `HOSTNAME` | `0.0.0.0` | Bind address |
+| `APP_PORT_BIND` | `3000` | Host port mapping for Docker (use `127.0.0.1:3000` behind Nginx) |
+| `PUBLIC_DOMAIN` | — | Domain for Nginx reverse proxy & HTTPS |
+| `LETSENCRYPT_EMAIL` | — | Email for Let's Encrypt certificate registration |
 
 ## Local Development
 
-Run from `scores-site`.
-
-### Option 1: run the database in Docker and the app locally
-
-Start Postgres:
+### Option 1: Postgres in Docker, app locally
 
 ```bash
 cp .env.example .env
 docker compose up -d postgres
-```
-
-Push the schema:
-
-```bash
 npm install
 npm run prisma:push
-```
-
-Run the app:
-
-```bash
 npm run dev
 ```
 
-### Option 2: run the whole stack in Docker
+### Option 2: Full stack in Docker
 
 ```bash
 cp .env.example .env
 docker compose up --build -d
 ```
 
-App:
+App at `http://localhost:3000`.
 
-`http://localhost:3000`
-
-## Useful Commands
+### Useful Commands
 
 ```bash
-npm install
-npm run prisma:generate
-npm run prisma:push
-npm run dev
-npm run lint
-npm run build
-docker compose up --build -d
-docker compose down
+npm run dev             # Start dev server with Turbopack
+npm run build           # Build for production
+npm run lint            # Run ESLint
+npm run prisma:generate # Regenerate Prisma client after schema changes
+npm run prisma:push     # Push schema to database (safe for prototyping)
 ```
 
-## Docker
+## Docker Deployment
 
-Included files:
-- `Dockerfile`
-- `docker-compose.yml`
-- `docker-compose.proxy.yml`
-- `.dockerignore`
-- `docker-entrypoint.sh`
-- `deploy.sh`
-- `.env.example`
-- `.env.production.example`
+### Included files
 
-### What Docker Compose runs
+| File | Purpose |
+|---|---|
+| `Dockerfile` | Multi-stage build (base → deps → builder → runner) |
+| `docker-compose.yml` | App + PostgreSQL services |
+| `docker-compose.proxy.yml` | Nginx + Let's Encrypt proxy stack |
+| `docker-entrypoint.sh` | Startup script (retries DB, runs `prisma db push`, starts server) |
+| `deploy.sh` | One-command deploy (validates env, builds, starts stacks) |
+| `.dockerignore` | Excludes build artifacts from Docker context |
 
-Services:
-- `postgres`
-- `app`
+### Docker Compose services
 
-Important behavior:
-- Postgres uses a named Docker volume for persistence
-- uploaded photos are mounted from `./public/photos`
-- the app waits for the database
-- the app runs `prisma db push` on startup before starting the server
-- the app exposes `/api/health` for health checks
-- the runtime image is kept slim by copying only the standalone Next output and the Prisma runtime pieces it needs
-- the default Compose profile is tuned for a small server footprint
+- **postgres**: PostgreSQL 16 Alpine, 768MB mem limit, named volume for persistence, health check via `pg_isready`
+- **app**: Next.js standalone build, 768MB mem limit, 512MB Node.js heap, health check via `/api/health`
+- **nginx-proxy** (optional): Reverse proxy on ports 80/443
+- **letsencrypt** (optional): Auto SSL certificate management
 
-### 2 GB server profile
+The default Compose profile is tuned for a **2 GB VPS** (100+ concurrent voters).
 
-The included Docker setup is tuned to be reasonable on a `2 GB` VPS:
-- app container memory limit: `768 MB`
-- postgres container memory limit: `768 MB`
-- remaining memory stays available for Docker, kernel, filesystem cache, and burst usage
-
-That is a practical starting point for:
-- 100+ concurrent voters
-- one admin user
-- one live event screen
-
-This is still a small-server setup, so for best results:
-- keep only one app instance
-- keep photos on local disk only if you are running a single node
-- avoid other heavy processes on the same server
-- use managed backups if this becomes important event infrastructure
-
-### Production deployment shape
-
-This stack is designed so you can:
-- build one app image
-- run one Postgres service
-- mount the photos folder
-- set env vars
-- host it without splitting the project into separate frontend and backend repos
-
-### Optional Nginx + HTTPS layer
-
-For domain + HTTPS, the repo now also includes:
-- `docker-compose.proxy.yml`
-- `deploy.sh`
-
-The proxy stack uses:
-- `nginxproxy/nginx-proxy`
-- `nginxproxy/acme-companion`
-
-That gives you:
-- Nginx reverse proxy
-- automatic Let's Encrypt certificates
-- HTTPS termination in front of the app
-
-## VPS Deployment Checklist
-
-Use this for a small production server.
-
-### 1. Prepare the server
-
-- use a clean Ubuntu/Debian VPS with at least `2 GB RAM`
-- install Docker and Docker Compose
-- open only the ports you need, usually `80`, `443`, and optionally `22`
-- do not run other heavy apps on the same server
-
-### 2. Copy the project
+### Production Deployment
 
 ```bash
-git clone <your-repo-url>
-cd scores-site
-```
+# 1. Prepare server (Ubuntu/Debian, Docker, ports 80/443 open)
 
-Or copy the project files directly onto the server.
-
-### 3. Create the production env file
-
-```bash
+# 2. Copy project and configure
 cp .env.production.example .env
-```
+# Edit .env: POSTGRES_PASSWORD, ADMIN_PASSWORD, SESSION_SECRET,
+#            PUBLIC_DOMAIN, LETSENCRYPT_EMAIL
 
-Then edit `.env` and set:
-- `POSTGRES_PASSWORD`
-- `ADMIN_PASSWORD`
-- `SESSION_SECRET`
-- `PUBLIC_DOMAIN`
-- `LETSENCRYPT_EMAIL`
-
-Use strong secrets.
-
-Recommended production value:
-- `APP_PORT_BIND=127.0.0.1:3000`
-
-That keeps the app port local to the server while Nginx handles public traffic.
-
-### 4. Prepare uploaded photos
-
-Make sure this folder exists:
-
-```bash
+# 3. Deploy
 mkdir -p public/photos
-```
-
-### 5. Start the stack
-
-```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-This script automatically:
-- creates `public/photos` if needed
-- loads `.env`
-- starts the normal app stack
-- starts the Nginx + HTTPS stack when `PUBLIC_DOMAIN` and `LETSENCRYPT_EMAIL` are set
+### With HTTPS
 
-### 6. Check that containers are healthy
+Set `PUBLIC_DOMAIN` and `LETSENCRYPT_EMAIL` in `.env`. The `deploy.sh` script automatically includes the proxy stack. DNS must already point to the server.
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml ps
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs app --tail 100
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs postgres --tail 100
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs nginx-proxy --tail 100
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs letsencrypt --tail 100
-```
+### Without Domain
 
-### 7. Test the app
+Leave `PUBLIC_DOMAIN` and `LETSENCRYPT_EMAIL` empty — `deploy.sh` starts only the app + database.
 
-- open `https://your-domain`
-- open `https://your-domain/login`
-- sign in with the admin credentials from `.env`
-- create a session
-- add participants
-- open voting
-- scan the QR from a phone
-- verify votes appear on the private board
+## Production Considerations
 
-### 8. Before the event
+- **Backups**: Use managed PostgreSQL backups or automate `pg_dump`.
+- **Photos**: For multi-node deployments, move photos to object storage (S3-compatible).
+- **Rate limiting**: Consider adding rate limiting on `/vote/[slug]/submit` for production events.
+- **Audit logging**: No admin action logging exists yet.
+- **Secrets**: Rotate `SESSION_SECRET` and `ADMIN_PASSWORD` periodically.
+- **HTTPS**: Always terminate TLS at the reverse proxy (included proxy stack does this).
+- **Tests**: No test suite exists — manual testing only.
 
-- restart the stack once before the event day:
+## License
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml down
-./deploy.sh
-```
-
-- test with multiple phones on the real network
-- keep one backup copy of participant photos
-- keep the `.env` file backed up securely
-
-## One-Command VPS Deploy
-
-After the server is prepared and `.env` is ready, the main deploy command is:
-
-```bash
-./deploy.sh
-```
-
-Useful follow-up commands:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml ps
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs app --tail 100
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs postgres --tail 100
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs nginx-proxy --tail 100
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml logs letsencrypt --tail 100
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml restart app
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml down
-```
-
-## DNS And HTTPS Notes
-
-Before using the proxy setup:
-- point your domain's `A` record to your server IP
-- wait for DNS propagation
-- make sure ports `80` and `443` are open on the VPS firewall
-
-The HTTPS setup works only when:
-- the domain resolves to the VPS
-- Let's Encrypt can reach the server on port `80`
-
-If you want to run without domain + HTTPS first, leave `PUBLIC_DOMAIN` and `LETSENCRYPT_EMAIL` empty and `deploy.sh` will start only the app + database stack.
-
-## Prisma Notes
-
-Schema:
-- `prisma/schema.prisma`
-
-Client singleton:
-- `src/lib/db.ts`
-
-Data/query layer:
-- `src/lib/store.ts`
-
-Auth/session layer:
-- `src/lib/auth.ts`
-
-If you need to evolve the schema later:
-
-1. update `prisma/schema.prisma`
-2. run `npm run prisma:generate`
-3. run `npm run prisma:push`
-
-## Production Notes
-
-This is much closer to a real deployable architecture now, but for a stronger production setup you should still consider:
-- using managed Postgres backups
-- moving photos to object storage if you ever run multiple app instances
-- adding rate limiting on vote submission
-- adding audit logs for admin actions
-- rotating secrets properly
-- putting HTTPS/reverse proxy in front of the app
-
-## Current Status
-
-Right now the app is:
-- Next.js frontend + backend in one repo
-- PostgreSQL-backed
-- Prisma-powered
-- Dockerized
-- suitable to deploy as one clean stack
-
-That means you no longer need the old JSON-file storage model for the main app path.
+Private project — internal use.
