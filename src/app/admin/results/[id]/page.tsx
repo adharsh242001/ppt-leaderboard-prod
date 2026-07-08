@@ -2,6 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { getSessionById, getSessionLeaderboard } from "@/lib/store";
+import { getParticipantPhotoUrl } from "@/lib/photoMatching";
+
+function getInitials(name: string) {
+  return name.split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase();
+}
 
 export default async function SessionResultsPage({
   params,
@@ -15,6 +20,10 @@ export default async function SessionResultsPage({
   if (!session) notFound();
 
   const rows = await getSessionLeaderboard(id);
+
+  const photoUrls = await Promise.all(
+    rows.map((row) => getParticipantPhotoUrl(row.name))
+  );
 
   return (
     <main className="min-h-screen px-4 py-8 sm:px-6 relative overflow-hidden">
@@ -41,8 +50,9 @@ export default async function SessionResultsPage({
         </div>
 
         <div className="card rounded-2xl p-5 animate-fade-in animate-fade-in-d1">
-          <div className="grid grid-cols-[56px_1fr_80px_80px_72px] gap-3 px-1 pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100">
+          <div className="grid grid-cols-[56px_36px_1fr_80px_80px_72px] gap-3 px-1 pb-3 text-xs font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100">
             <div>Rank</div>
+            <div />
             <div>Participant</div>
             <div className="text-right">Score</div>
             <div className="text-right">Avg</div>
@@ -50,20 +60,34 @@ export default async function SessionResultsPage({
           </div>
 
           <div className="mt-2 space-y-1">
-            {rows.map((row, i) => (
-              <div
-                key={row.name}
-                className="grid grid-cols-[56px_1fr_80px_80px_72px] gap-3 items-center rounded-xl px-1 py-3 hover:bg-gray-50 transition"
-              >
-                <div className={`text-sm font-bold ${i === 0 ? "text-yellow-500" : i === 1 ? "text-gray-400" : i === 2 ? "text-orange-400" : "text-gray-600"}`}>
-                  #{i + 1}
+            {rows.map((row, i) => {
+              const photoUrl = photoUrls[i];
+              const initials = getInitials(row.name);
+
+              return (
+                <div
+                  key={row.name}
+                  className="grid grid-cols-[56px_36px_1fr_80px_80px_72px] gap-3 items-center rounded-xl px-1 py-3 hover:bg-gray-50 transition"
+                >
+                  <div className={`text-sm font-bold ${i === 0 ? "text-yellow-500" : i === 1 ? "text-gray-400" : i === 2 ? "text-orange-400" : "text-gray-600"}`}>
+                    #{i + 1}
+                  </div>
+                  <div className="flex items-center justify-center">
+                    {photoUrl ? (
+                      <img src={photoUrl} alt={row.name} className="w-9 h-9 rounded-lg object-cover shadow-sm" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-400 text-[10px] font-bold">
+                        {initials}
+                      </div>
+                    )}
+                  </div>
+                  <div className="truncate text-sm font-semibold text-gray-900">{row.name}</div>
+                  <div className="text-right text-sm font-bold text-gray-900">{row.sum}</div>
+                  <div className="text-right text-sm text-gray-500">{row.avg}</div>
+                  <div className="text-right text-sm text-gray-500">{row.count}</div>
                 </div>
-                <div className="truncate text-sm font-semibold text-gray-900">{row.name}</div>
-                <div className="text-right text-sm font-bold text-gray-900">{row.sum}</div>
-                <div className="text-right text-sm text-gray-500">{row.avg}</div>
-                <div className="text-right text-sm text-gray-500">{row.count}</div>
-              </div>
-            ))}
+              );
+            })}
             {rows.length === 0 && (
               <div className="text-center py-10 text-sm text-gray-400">No votes recorded for this session yet.</div>
             )}
