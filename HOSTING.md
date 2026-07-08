@@ -1,234 +1,322 @@
-# Hosting & Test-Run Guide
+# Setup Guide: Run Locally + Deploy to Vercel & Supabase
 
-## 1. Quick Test Run (Local Development)
+This guide walks you through two paths:
 
-### Prerequisites
+- **Local test run** — get the app running on your machine in 5 minutes
+- **Vercel + Supabase deploy** — production hosting (free tier)
 
-- Node.js 22+
-- Docker (for the database)
-- npm
+---
 
-### Steps
+## Prerequisites
+
+| Tool | Why | Install |
+|---|---|---|
+| Node.js 22+ | Runtime | [nodejs.org](https://nodejs.org) |
+| Docker | Local Postgres | [docker.com](https://docker.com) |
+| Git | Version control | [git-scm.com](https://git-scm.com) |
+
+---
+
+## 1. Quick Local Test Run
+
+### 1.1 Clone and enter the project
 
 ```bash
-# 1. Clone and enter the project
-git clone <repo-url>
+git clone <your-repo-url>
 cd ppt-leaderboard-prod
+```
 
-# 2. Create env file
+### 1.2 Create environment file
+
+```bash
 cp .env.example .env
+```
 
-# 3. Start PostgreSQL in Docker
+Open `.env` and set at minimum:
+
+```
+ADMIN_PASSWORD=test123
+SESSION_SECRET=my-local-dev-secret-key-change-me
+```
+
+For local dev you can leave `DATABASE_URL` as-is (it points to `localhost`).
+
+### 1.3 Start the database
+
+```bash
 docker compose up -d postgres
+```
 
-# 4. Install dependencies
+This starts PostgreSQL in a container. It takes about 10 seconds to be ready.
+
+### 1.4 Install dependencies
+
+```bash
 npm install
+```
 
-# 5. Push the database schema
+This also runs `prisma generate` automatically (via `postinstall` script).
+
+### 1.5 Push the database schema
+
+```bash
 npm run prisma:push
+```
 
-# 6. Start the dev server
+Creates all 7 tables in your local Postgres.
+
+### 1.6 Start the dev server
+
+```bash
 npm run dev
 ```
 
-Open `http://localhost:3000` — you'll be redirected to `/login`. The default admin password is whatever you set in `.env` (template default: `replace-with-a-strong-admin-password`).
+### 1.7 Open and test
 
-### Quick Smoke Test
+| URL | What you see |
+|---|---|
+| `http://localhost:3000` | Redirected to `/login` |
+| `http://localhost:3000/login` | Admin login form |
+| `http://localhost:3000/api/health` | `{"ok":true,"database":"connected",...}` |
 
-```bash
-# Health check
-curl http://localhost:3000/api/health
+**Login**: Enter the password you set in `.env` (`ADMIN_PASSWORD`). Default: `test123`.
 
-# Should return: {"ok":true,"database":"connected",...}
+### 1.8 Quick functional test
+
+Once logged in:
+
+1. Create a session — type a title, click **Create**
+2. Add participants — type names, click **Add** (try "Alice", "Bob", "Charlie")
+3. Open voting — click **Go live**
+4. Open the voting page in a private/incognito window: `http://localhost:3000/vote/{slug}` (slug is shown on the session page)
+5. Submit votes for each participant
+6. Check the scoreboard at `http://localhost:3000/scoreboard`
+7. Close voting — click **Close**
+
+---
+
+## 2. Deploy to Vercel + Supabase (Free Tier)
+
+### Architecture
+
+```
+Users ──► Vercel (Next.js app)
+               │
+       ┌───────┼───────┐
+       ▼               ▼
+  Supabase          Supabase
+  PostgreSQL        Storage
+  (data)            (photos)
 ```
 
 ---
 
-## 2. Host on a VPS with Docker (Recommended)
+### 2.1 Create a Supabase project
 
-This is the intended production path — runs on any Linux VPS with Docker. The stack includes a reverse proxy with auto HTTPS.
+1. Go to [supabase.com](https://supabase.com) and sign in
+2. Click **New project**
+3. Fill in:
+   - **Name**: `ppt-leaderboard` (or anything)
+   - **Database password**: generate a strong one, **save it**
+   - **Region**: pick one close to your audience
+4. Wait ~2 minutes for the project to provision
 
-### Requirements
+### 2.2 Get Supabase credentials
 
-- Linux VPS (Ubuntu/Debian) with **at least 2 GB RAM**
-- Docker & Docker Compose installed
-- Ports **80** and **443** open (for HTTPS)
-- A domain name pointing to the server (optional but recommended)
+Once the project is ready:
 
-### Setup
+**Database URL:**
+- Go to **Project Settings → Database → Connection string**
+- Select **URI**
+- Copy the full URI. It looks like:
+  ```
+  postgresql://postgres:xxxxx@db.xxxxx.supabase.co:5432/postgres
+  ```
+- If you will deploy to Vercel, append `?pgbouncer=true` to use connection pooling:
+  ```
+  postgresql://postgres:xxxxx@db.xxxxx.supabase.co:5432/postgres?pgbouncer=true
+  ```
+
+**API credentials:**
+- Go to **Project Settings → API**
+- Copy these two values:
+  - **Project URL** → this is your `NEXT_PUBLIC_SUPABASE_URL`
+  - **service_role key** → this is your `SUPABASE_SERVICE_ROLE_KEY` (click **Copy**)
+
+> **IMPORTANT**: The `service_role` key is a secret. Never expose it in frontend code. It's only used server-side (in API routes), so Vercel is safe.
+
+### 2.3 Create the Storage bucket
+
+1. Go to **Storage** in the Supabase dashboard
+2. Click **New bucket**
+3. Name: `photos` (must match exactly)
+4. Check **Public bucket** (so photo URLs are accessible without auth)
+5. Click **Create bucket**
+
+### 2.4 Push the database schema to Supabase
+
+You need to run this locally with your Supabase connection string:
 
 ```bash
-# 1. Copy project to server (git clone or rsync)
+# Set the Supabase DATABASE_URL temporarily
+DATABASE_URL="postgresql://postgres:your-password@db.xxxxx.supabase.co:5432/postgres" npx prisma db push
+```
 
-# 2. Create production env file
+This creates all 7 tables in your Supabase Postgres instance.
+
+> **Troubleshooting**: If Prisma times out, add `?pgbouncer=true` and `&connection_limit=1` to the URL.
+
+---
+
+### 2.5 Push your code to GitHub
+
+```bash
+git add .
+git commit -m "add Supabase Storage support for Vercel deployment"
+git push
+```
+
+> The repo already has the Supabase Storage code changes (photo upload and photo API routes).
+
+---
+
+### 2.6 Deploy to Vercel
+
+1. Go to [vercel.com](https://vercel.com) and sign in
+2. Click **Add New → Project**
+3. Import your GitHub repo
+4. Vercel auto-detects Next.js — leave the default settings
+
+### 2.7 Set environment variables on Vercel
+
+In the Vercel project dashboard, go to **Settings → Environment Variables** and add these:
+
+| Variable | Value | Where to get it |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://postgres:...@db.xxxxx.supabase.co:5432/postgres?pgbouncer=true` | Supabase → Project Settings → Database → URI |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://xxxxx.supabase.co` | Supabase → Project Settings → API → Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIs...` | Supabase → Project Settings → API → service_role key |
+| `ADMIN_USERNAME` | `admin` | Your choice |
+| `ADMIN_PASSWORD` | `your-strong-password` | Your choice (use a strong one) |
+| `SESSION_SECRET` | `a-random-string-at-least-32-chars-long` | Generate: `openssl rand -hex 32` |
+
+Set all of them for **Production** (and optionally Preview/Development).
+
+> **Do NOT set** `NODE_ENV` — Vercel handles this automatically.
+> **Do NOT set** `POSTGRES_*` vars — those are only for the Docker setup.
+
+### 2.8 Deploy
+
+Click **Deploy**. Wait ~2 minutes for the build.
+
+---
+
+### 2.9 Verify the deployment
+
+Once deployed, Vercel gives you a URL like `https://ppt-leaderboard.vercel.app`.
+
+Run through these checks:
+
+**1. Health check**
+```bash
+curl https://your-app.vercel.app/api/health
+```
+Expected:
+```json
+{"ok":true,"service":"ppt-leaderboard","database":"connected","timestamp":"..."}
+```
+
+**2. Login page loads**
+Open `https://your-app.vercel.app/login` — you should see the login form.
+
+**3. Login works**
+Enter your admin password — you should be redirected to `/admin`.
+
+**4. Create a session**
+Type a title and click **Create**.
+
+**5. Add participants**
+Type names and click **Add**.
+
+**6. Upload a photo**
+- Click **Choose file** next to a participant
+- Select a `.jpg` or `.png` image
+- Click **Upload photo**
+- The photo is stored in Supabase Storage (check your Storage bucket in the Supabase dashboard)
+
+**7. Open voting**
+Click **Go live**.
+
+**8. Vote**
+Open `https://your-app.vercel.app/vote/{slug}` in a private/incognito window. Rate participants and submit.
+
+**9. Scoreboard**
+Open `https://your-app.vercel.app/scoreboard` — you should see the champion and rankings updating.
+
+---
+
+## 3. Alternative: Deploy on a VPS with Docker
+
+If you prefer not to use Vercel, the project still supports Docker-based deployment on any Linux VPS.
+
+```bash
+# Copy the production env template
 cp .env.production.example .env
 
-# 3. Edit .env — set these:
-#    - POSTGRES_PASSWORD    (strong, random)
-#    - ADMIN_PASSWORD       (strong, random)
-#    - SESSION_SECRET       (at least 32 random characters)
-#    - PUBLIC_DOMAIN        (e.g., leaderboard.example.com)
-#    - LETSENCRYPT_EMAIL    (your email for cert notifications)
+# Edit .env with your values
+#   POSTGRES_PASSWORD, ADMIN_PASSWORD, SESSION_SECRET
+#   PUBLIC_DOMAIN (if using a domain)
+#   LETSENCRYPT_EMAIL (if using HTTPS)
 
-# 4. Create photos directory
+# Deploy
 mkdir -p public/photos
-
-# 5. Run the deploy script
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-### Without a Domain
-
-Leave `PUBLIC_DOMAIN` and `LETSENCRYPT_EMAIL` empty in `.env`. The deploy script starts only the app + database stack. Access via `http://<server-ip>:3000`. No HTTPS — use only for testing or LAN events.
-
-### Useful Commands
-
-```bash
-# Check container status
-docker compose ps
-
-# View app logs
-docker compose logs app --tail 100
-
-# View database logs
-docker compose logs postgres --tail 100
-
-# Restart app only (quick, doesn't rebuild)
-docker compose restart app
-
-# Full rebuild and restart
-docker compose up --build -d
-
-# Stop everything
-docker compose down
-```
-
-### Update to a New Version
-
-```bash
-git pull                      # pull latest code
-docker compose down           # stop current stack
-./deploy.sh                   # rebuild and deploy
-```
+See the [README.md](./README.md) for full Docker deployment details.
 
 ---
 
-## 3. Host on Vercel
+## Troubleshooting
 
-Vercel hosting is possible with changes — see the table below.
+### Build fails on Vercel
 
-### Vercel Compatibility
+**"Cannot find module '@supabase/supabase-js'"**
+→ Make sure `npm install` ran. Check that `@supabase/supabase-js` is in `package.json` under `dependencies` (not `devDependencies`).
 
-| Feature | Works? | Notes |
-|---|---|---|
-| Pages (admin, vote, display) | Yes | All Next.js App Router pages deploy as-is |
-| API routes | Yes | `/api/*`, `/auth/*`, `/admin/*/route.ts` all work |
-| Form POST handlers | Yes | Server Actions in route handlers |
-| Prisma + PostgreSQL | Yes | Use Vercel Postgres, Neon, or Supabase |
-| Authentication (cookies + bcrypt) | Yes | Works in serverless functions |
-| QR code generation | Yes | Pure JS, no native deps |
-| **Photo upload** | **No** | Writes to local filesystem — **not available on serverless** |
-| **Photo API** (`/api/photos`) | **No** | Uses `readdir` on local filesystem — **not available on serverless** |
+**"PrismaClientInitializationError"**
+→ Your `DATABASE_URL` is wrong. Go to Supabase → Project Settings → Database → URI and copy the full string. Make sure the password is correct.
 
-### Changes Needed for Vercel
+### Login redirects back to /login
 
-#### 1. Database
+Either:
+- Wrong `ADMIN_PASSWORD` — check the env var on Vercel
+- `SESSION_SECRET` is missing — the session token can't be hashed properly
+- The database isn't connected — check `/api/health`
 
-Provision a hosted PostgreSQL:
+### Photo upload redirects but nothing appears
 
-| Provider | Free tier | Notes |
-|---|---|---|
-| Vercel Postgres | 256 MB | Simplest — same dashboard as hosting |
-| Neon | 500 MB | Serverless, auto-pause |
-| Supabase | 500 MB | Includes dashboard, auth, storage |
+- Check if the Storage bucket exists (name: `photos`, must be **public**)
+- Check `SUPABASE_SERVICE_ROLE_KEY` is set correctly
+- Check Vercel function logs for Supabase errors
 
-Set `DATABASE_URL` in Vercel project env vars to the connection string.
+### Viewing logs on Vercel
 
-#### 2. Photo Storage — Replace Filesystem with Vercel Blob
+In the Vercel dashboard:
+- Go to your project → **Deployments**
+- Click the latest deployment
+- Click **Functions** → select a function → **Logs**
 
-Three files need modification:
+---
 
-**`src/app/admin/sessions/[id]/participants/[participantId]/photo/route.ts`**
+## Reference: Key Files Changed for Supabase Storage
 
-Replace filesystem `writeFile` / `readdir` / `rm` with blob upload. Using Vercel Blob:
-
-```ts
-import { put, list, del } from "@vercel/blob";
-// ... validate file ...
-const blob = await put(`photos/${fileName}`, file, {
-  access: "public",
-});
-```
-
-**`src/app/api/photos/route.ts`**
-
-Replace `readdir` with `list()` from `@vercel/blob`:
-
-```ts
-import { list } from "@vercel/blob";
-const { blobs } = await list({ prefix: "photos/" });
-// map blob.url to normalized names
-```
-
-**`src/components/Scoreboard.tsx`**
-
-No code change needed — it already fetches `/api/photos` and uses the returned URL map. The URLs will point to Vercel Blob instead of local paths.
-
-Install the blob package:
-
-```bash
-npm install @vercel/blob
-```
-
-Set `BLOB_READ_WRITE_TOKEN` in Vercel env vars (auto-added when you enable Vercel Blob in the dashboard).
-
-#### 3. Vercel Configuration
-
-No special `vercel.json` needed — the Next.js config is compatible. Just:
-
-1. Connect your Git repo in Vercel dashboard
-2. Set all environment variables (see table below)
-3. Deploy
-
-### Environment Variables on Vercel
-
-Set these in the Vercel project dashboard (Settings → Environment Variables):
-
-| Variable | Source |
+| File | Purpose |
 |---|---|
-| `DATABASE_URL` | Your hosted PostgreSQL connection string |
-| `ADMIN_USERNAME` | Your chosen admin username |
-| `ADMIN_PASSWORD` | Your chosen admin password |
-| `SESSION_SECRET` | Random 32+ char string |
-| `BLOB_READ_WRITE_TOKEN` | Auto-added when Vercel Blob is enabled |
+| `src/lib/supabase.ts` | Supabase admin client (singleton) |
+| `src/app/.../photo/route.ts` | Upload handler — uses `supabase.storage.upload()` |
+| `src/app/api/photos/route.ts` | Photo index — uses `supabase.storage.list()`, returns public URLs |
+| `next.config.ts` | Added `images.remotePatterns` for `*.supabase.co` |
 
-**Do not set** `NODE_ENV` — Vercel sets it automatically. `POSTGRES_*` vars are only for Docker and can be omitted.
-
-### Vercel Limitations
-
-- **No persistent filesystem** — photos must use blob/object storage
-- **Serverless timeout** — 60s max on Hobby, 300s on Pro (not an issue for this app)
-- **Edge runtime** — Not suitable (uses Prisma, bcrypt, Node.js APIs)
-- **Cold starts** — First request after inactivity may be slow
-
----
-
-## Comparison Summary
-
-| Factor | Docker VPS | Vercel |
-|---|---|---|
-| Setup complexity | Medium | Low (after code changes) |
-| Cost | ~$6–12/mo (2GB VPS) | Free tier sufficient |
-| Maintenance | You manage server, updates, backups | Zero maintenance |
-| HTTPS | Included (auto Let's Encrypt) | Included (automatic) |
-| Photo storage | Local disk (Docker volume) | Vercel Blob (S3) |
-| Scalability | Single node, 100+ concurrent voters | Auto-scaling |
-| Cold starts | None (always running) | Yes (first request slow) |
-| Custom domain | Yes | Yes |
-
-### Recommendation
-
-- **For live events with photos**: Use the Docker VPS path — it's the intended setup, zero code changes, and photos work out of the box.
-- **For a quick test or no-photo deployment**: Vercel works well after the blob storage changes.
-- **For a LAN / local event**: Just run locally with `npm run dev` — no server needed.
+Everything else (scoreboard, voting, auth, admin pages) is unchanged.
