@@ -6,7 +6,7 @@ import {
   isSupportedPhotoFile,
   normalizeParticipantName,
 } from "@/lib/photoMatching";
-import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
+import { supabaseAdmin, STORAGE_BUCKET, isSupabaseConfigured } from "@/lib/supabase";
 
 export async function POST(
   request: Request,
@@ -32,6 +32,11 @@ export async function POST(
   }
 
   if (!isSupportedPhotoFile(file.name)) {
+    return NextResponse.redirect(new URL(`/admin/sessions/${id}`, request.url));
+  }
+
+  if (!isSupabaseConfigured || !supabaseAdmin) {
+    console.error("Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
     return NextResponse.redirect(new URL(`/admin/sessions/${id}`, request.url));
   }
 

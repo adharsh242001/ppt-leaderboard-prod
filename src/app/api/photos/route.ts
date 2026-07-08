@@ -3,11 +3,15 @@ import {
   getPhotoBaseName,
   isSupportedPhotoFile,
 } from "@/lib/photoMatching";
-import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
+import { supabaseAdmin, STORAGE_BUCKET, isSupabaseConfigured } from "@/lib/supabase";
 
 type PhotoIndex = Record<string, string>;
 
 export async function GET() {
+  if (!isSupabaseConfigured || !supabaseAdmin) {
+    return NextResponse.json({ photos: {} });
+  }
+
   try {
     const { data: files, error } = await supabaseAdmin.storage
       .from(STORAGE_BUCKET)
