@@ -289,6 +289,91 @@ Leave `PUBLIC_DOMAIN` and `LETSENCRYPT_EMAIL` empty — `deploy.sh` starts only 
 - **HTTPS**: Always terminate TLS at the reverse proxy (included proxy stack does this).
 - **Tests**: No test suite exists — manual testing only.
 
+## User Guide
+
+### Admin Panel
+
+#### Logging In
+
+1. Open `/login` in your browser.
+2. Enter the admin password (set via `ADMIN_PASSWORD` env var).
+3. A session cookie is set — valid for 7 days.
+
+#### Dashboard (`/admin`)
+
+The admin dashboard shows:
+
+- **Create session** — Enter a title and click "Create" to start a new presentation session. A URL slug is auto-generated from the title.
+- **Current live session** — If any session is live, this panel shows its title, participant count, and QR path. Quick links to Manage, Podium, and Ranking.
+- **All sessions** — Lists every session with:
+  - Title, participant count, vote count, status
+  - `Go live` button — opens voting (auto-closes any other live session)
+  - `Close` button — ends voting
+  - `Manage` link — opens session detail page
+  - `Results` link — opens per-session leaderboard
+- **History** link at the top shows only closed sessions.
+
+#### Session Detail (`/admin/sessions/[id]`)
+
+- **QR Code** — Auto-generated QR linking to the voting page (`/vote/[slug]`). Display it on screen for the audience to scan.
+- **Voting URL** — Shown below the QR for manual sharing.
+- **Controls**:
+  - `Open voting` — sets status to `live`
+  - `Close voting` — sets status to `closed`
+  - `View results` — opens the session leaderboard
+- **Participants** section:
+  - **Add participant** — Type a name and click "Add". Participants are de-duplicated globally via normalized names.
+  - **Upload photo** — Click "Choose file", select an image (jpg, png, webp, gif, avif), then click "Upload photo". The photo is matched to the participant by normalized name for display on the scoreboard.
+  - **Remove** — Deletes the participant and their votes from the session.
+
+#### Session Results (`/admin/results/[id]`)
+
+Shows a ranked leaderboard for a single session:
+
+- Rank, participant name, total score, average, and vote count
+- Sorted by total score descending
+- Links back to Session detail and History
+
+#### History (`/admin/history`)
+
+Lists all closed sessions with participant/vote counts. Each entry links to Results and Session detail.
+
+### Scoreboard & Display Pages
+
+All display pages are admin-protected (require a valid admin session cookie).
+
+#### Home Page (`/`)
+
+The default scoreboard view — shows the **podium layout**:
+
+- **Champion card** — Large format with name, score, average, vote count, rank (#1), and participant photo (or gold initials)
+- **Second Place** — Compact card with silver accent
+- **Third Place** — Compact card with bronze accent
+- No full ranking list below the top 3
+
+Use this as your main projector/podium display during the event.
+
+#### Scoreboard (`/scoreboard`)
+
+Identical to the home page — podium layout with champion + top 3. Included as a dedicated route for convenience.
+
+#### Ranking (`/ranking`)
+
+Full ranking view — shows the champion + top 3 **plus** a scrollable table of all participants below:
+
+- Table columns: Rank, Participant (with photo or initials), Score, Avg, Count
+- Scrollable container for long participant lists
+- Toggle between podium and ranking via the header link
+
+### What Happens During a Live Event
+
+1. **Before the event**: Create a session, add all participants, upload photos, test the QR.
+2. **Open voting**: Click "Go live" on the session. The session status changes to `live`.
+3. **Audience votes**: People scan the QR, rate participants 1–10, and submit. Each device can vote once.
+4. **Display updates**: The scoreboard auto-refreshes every 10 seconds, showing real-time rankings.
+5. **Close voting**: Click "Close" when the presentation segment ends.
+6. **Review results**: Open the session results page or history to see final standings.
+
 ## License
 
 Private project — internal use.
