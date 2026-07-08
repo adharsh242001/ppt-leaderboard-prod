@@ -171,22 +171,56 @@ Votes are only accepted for sessions with `live` status.
 
 ## Photo Handling
 
-- Photos stored in `public/photos/` (mounted as a Docker volume for persistence)
-- Upload via admin session page (multipart form POST to `/admin/sessions/[id]/participants/[pid]/photo`)
-- Matching: participant names and photo filenames are normalized (strip spaces, dots, underscores, parentheses, hyphens) → matched via `/api/photos` index
-- Supported formats: avif, gif, jpg, jpeg, png, webp
-- On re-upload: old photos matching the same normalized name are automatically cleaned up
+Photos are stored differently depending on the deployment:
 
-## Environment Variables
+- **Docker VPS**: Stored in `public/photos/` (mounted as a Docker volume for persistence)
+- **Vercel + Supabase**: Stored in Supabase Storage bucket named `photos` (must be created in the Supabase dashboard — see [Supabase Storage section](#supabase-storage-for-vercel-deployment))
+
+Matching logic works the same for both:
+- Participant names and photo filenames are normalized (strip spaces, dots, underscores, parentheses, hyphens)
+- The `/api/photos` endpoint returns a map of `{ normalizedName: photoUrl }`
+- The scoreboard component looks up each participant's photo by normalized name
+
+Supported formats: avif, gif, jpg, jpeg, png, webp.
+
+Upload via admin session page (multipart form POST to `/admin/sessions/[id]/participants/[pid]/photo`). On re-upload, old photos matching the same normalized name are automatically cleaned up.
+
+## Supabase Storage (for Vercel Deployment)
+
+When deploying on Vercel, participant photos are stored in **Supabase Storage** instead of the local filesystem.
+
+### Required Setup
+
+1. In your Supabase dashboard, go to **Storage → New bucket**
+2. Name the bucket exactly **`photos`**
+3. Toggle **Public bucket** ON (so photo URLs are accessible without auth)
+4. Click **Create bucket**
+
+### How It Works
+
+| Step | What happens |
+|---|---|
+| Admin uploads a photo | The route handler uploads the file to Supabase Storage via `supabase.storage.upload()` |
+| Scoreboard loads | It calls `/api/photos` which lists files via `supabase.storage.list()` and returns public URLs |
+| Photo displayed | `<Image>` component renders the Supabase public URL |
+
+### Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | For Vercel | Supabase project URL (from Project Settings → API) |
+| `SUPABASE_SERVICE_ROLE_KEY` | For Vercel | Service role key for server-side Storage operations |
+
+> **Note**: The `service_role` key is a server-side secret. It's only used in API route handlers, never exposed to the browser.
 
 ### Required
 
 | Variable | Description |
 |---|---|
-| `DATABASE_URL` | Prisma connection string (used outside Docker) |
-| `POSTGRES_DB` | PostgreSQL database name |
-| `POSTGRES_USER` | PostgreSQL user |
-| `POSTGRES_PASSWORD` | PostgreSQL password |
+| `DATABASE_URL` | Prisma connection string |
+| `POSTGRES_DB` | PostgreSQL database name (Docker only) |
+| `POSTGRES_USER` | PostgreSQL user (Docker only) |
+| `POSTGRES_PASSWORD` | PostgreSQL password (Docker only) |
 | `ADMIN_USERNAME` | Admin login username |
 | `ADMIN_PASSWORD` | Admin login password |
 | `SESSION_SECRET` | Pepper for session token hashing (min 32 chars, use random) |
