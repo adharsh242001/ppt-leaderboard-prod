@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { getSessionById } from "@/lib/store";
+import { getParticipantPhotoUrl } from "@/lib/photoMatching";
 
 function QrDownload({ dataUrl, fileName }: { dataUrl: string; fileName: string }) {
   return (
@@ -44,13 +45,16 @@ export default async function SessionPage({
     margin: 1, color: { dark: "#4f46e5", light: "#ffffff" }, width: 200,
   });
 
-  const participantQrs = await Promise.all(
+  const participantCards = await Promise.all(
     session.participants.map(async (p) => {
       const url = `${voteUrl}?p=${p.participantId}`;
-      const dataUrl = await QRCode.toDataURL(url, {
-        margin: 1, color: { dark: "#4f46e5", light: "#ffffff" }, width: 140,
-      });
-      return { ...p, qrDataUrl: dataUrl, qrUrl: url };
+      const [qrDataUrl, photoUrl] = await Promise.all([
+        QRCode.toDataURL(url, {
+          margin: 1, color: { dark: "#4f46e5", light: "#ffffff" }, width: 140,
+        }),
+        getParticipantPhotoUrl(p.name),
+      ]);
+      return { ...p, qrDataUrl, qrUrl: url, photoUrl };
     })
   );
 
@@ -147,47 +151,60 @@ export default async function SessionPage({
             <div className="card rounded-2xl p-8 text-center text-sm text-gray-400">No participants yet. Add one above.</div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {participantQrs.map((participant) => (
-                <div key={participant.participantId} className="card rounded-xl p-4 hover:border-gray-300 transition">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-semibold text-gray-900 truncate text-sm">
-                      <span className="text-gray-400 font-normal">{participant.displayOrder}.</span>{" "}
-                      {participant.name}
-                    </p>
-                    <form
-                      action={`/admin/sessions/${session.id}/participants/${participant.participantId}/delete`}
-                      method="post"
-                    >
-                      <button className="shrink-0 rounded-lg border border-red-100 bg-red-50 px-2 py-1 text-xs font-semibold text-red-400 hover:text-red-600 hover:bg-red-100 transition">
-                        Remove
-                      </button>
-                    </form>
-                  </div>
+              {participantCards.map((participant) => {
+                const initials = participant.name.split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase();
 
-                  <div className="mt-3 flex items-start gap-4">
-                    <div className="shrink-0 rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
-                      <Image src={participant.qrDataUrl} alt={`${participant.name} QR`} width={140} height={140} className="h-16 w-16 rounded-md" unoptimized />
+                return (
+                  <div key={participant.participantId} className="card rounded-xl p-4 hover:border-gray-300 transition">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {participant.photoUrl ? (
+                          <img src={participant.photoUrl} alt={participant.name} className="w-10 h-10 rounded-xl object-cover shadow-sm shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-400 text-xs font-bold shrink-0">
+                            {initials}
+                          </div>
+                        )}
+                        <p className="font-semibold text-gray-900 truncate text-sm">
+                          <span className="text-gray-400 font-normal">{participant.displayOrder}.</span>{" "}
+                          {participant.name}
+                        </p>
+                      </div>
+                      <form
+                        action={`/admin/sessions/${session.id}/participants/${participant.participantId}/delete`}
+                        method="post"
+                      >
+                        <button className="shrink-0 rounded-lg border border-red-100 bg-red-50 px-2 py-1 text-xs font-semibold text-red-400 hover:text-red-600 hover:bg-red-100 transition">
+                          Remove
+                        </button>
+                      </form>
                     </div>
-                    <div className="min-w-0 space-y-2 pt-0.5">
-                      <a href={participant.qrUrl} target="_blank" className="block truncate text-xs text-gray-400 hover:text-indigo-600">
-                        {participant.qrUrl}
-                      </a>
-                      <div className="flex flex-wrap gap-1.5">
-                        <QrDownload dataUrl={participant.qrDataUrl} fileName={`${participant.name.replace(/\s+/g, "-")}-qr.png`} />
-                        <form action={`/admin/sessions/${session.id}/participants/${participant.participantId}/photo`} method="post" encType="multipart/form-data" className="inline-flex">
-                          <label className="cursor-pointer rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800 hover:border-gray-300 shadow-sm transition">
-                            <input type="file" name="photo" accept=".jpg,.jpeg,.png,.webp,.gif,.avif" className="hidden" required />
-                            Photo
-                          </label>
-                          <button className="ml-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800 hover:border-gray-300 shadow-sm transition">
-                            Upload
-                          </button>
-                        </form>
+
+                    <div className="mt-3 flex items-start gap-4">
+                      <div className="shrink-0 rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+                        <Image src={participant.qrDataUrl} alt={`${participant.name} QR`} width={140} height={140} className="h-16 w-16 rounded-md" unoptimized />
+                      </div>
+                      <div className="min-w-0 space-y-2 pt-0.5">
+                        <a href={participant.qrUrl} target="_blank" className="block truncate text-xs text-gray-400 hover:text-indigo-600">
+                          {participant.qrUrl}
+                        </a>
+                        <div className="flex flex-wrap gap-1.5">
+                          <QrDownload dataUrl={participant.qrDataUrl} fileName={`${participant.name.replace(/\s+/g, "-")}-qr.png`} />
+                          <form action={`/admin/sessions/${session.id}/participants/${participant.participantId}/photo`} method="post" encType="multipart/form-data" className="inline-flex">
+                            <label className="cursor-pointer rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800 hover:border-gray-300 shadow-sm transition">
+                              <input type="file" name="photo" accept=".jpg,.jpeg,.png,.webp,.gif,.avif" className="hidden" required />
+                              {participant.photoUrl ? "Change" : "Photo"}
+                            </label>
+                            <button className="ml-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800 hover:border-gray-300 shadow-sm transition">
+                              Upload
+                            </button>
+                          </form>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
