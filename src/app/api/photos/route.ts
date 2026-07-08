@@ -1,20 +1,32 @@
-import { readdir } from "node:fs/promises";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import {
   getPhotoBaseName,
   isSupportedPhotoFile,
 } from "@/lib/photoMatching";
+import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
 
 type PhotoIndex = Record<string, string>;
 
 export async function GET() {
-  const photosDir = path.join(process.cwd(), "public", "photos");
-
   try {
-    const entries = await readdir(photosDir, { withFileTypes: true });
-    const fileNames = entries
-      .filter((entry) => entry.isFile() && isSupportedPhotoFile(entry.name))
+    const { data: files, error } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .list();
+
+    if (error) {
+      console.error("Failed to list photos from Supabase Storage", error);
+      return NextResponse.json(
+        { error: "Failed to build photo index", photos: {} },
+        { status: 500 }
+      );
+    }
+
+    if (!files || files.length === 0) {
+      return NextResponse.json({ photos: {} });
+    }
+
+    const fileNames = files
+      .filter((entry) => isSupportedPhotoFile(entry.name))
       .map((entry) => entry.name)
       .sort((a, b) => a.localeCompare(b));
 
@@ -22,9 +34,7 @@ export async function GET() {
 
     for (const fileName of fileNames) {
       const normalizedName = getPhotoBaseName(fileName);
-      if (!normalizedName) {
-        continue;
-      }
+      if (!normalizedName) continue;
 
       if (photoIndex[normalizedName]) {
         console.warn(
@@ -33,20 +43,15 @@ export async function GET() {
         continue;
       }
 
-      photoIndex[normalizedName] = `/photos/${fileName}`;
+      const { data: publicUrlData } = supabaseAdmin.storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(fileName);
+
+      photoIndex[normalizedName] = publicUrlData.publicUrl;
     }
 
     return NextResponse.json({ photos: photoIndex });
   } catch (error) {
-    const isMissingDirectory =
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "ENOENT";
-
-    if (isMissingDirectory) {
-      return NextResponse.json({ photos: {} });
-    }
-
     console.error("Failed to build photo index", error);
     return NextResponse.json(
       { error: "Failed to build photo index", photos: {} },
