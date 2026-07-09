@@ -6,7 +6,6 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { getSessionById } from "@/lib/store";
 import { getParticipantPhotoUrl } from "@/lib/photoMatching";
-import { supabaseAdmin, STORAGE_BUCKET, isSupabaseConfigured } from "@/lib/supabase";
 
 function QrDownload({ dataUrl, fileName }: { dataUrl: string; fileName: string }) {
   return (
@@ -27,14 +26,11 @@ function QrDownload({ dataUrl, fileName }: { dataUrl: string; fileName: string }
 
 export default async function SessionPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ photo?: string; pid?: string }>;
 }) {
   await requireAdmin();
   const { id } = await params;
-  const { photo: uploadedFilename, pid: uploadedParticipantId } = await searchParams;
   const session = await getSessionById(id);
 
   if (!session) notFound();
@@ -52,23 +48,11 @@ export default async function SessionPage({
   const participantCards = await Promise.all(
     session.participants.map(async (p) => {
       const url = `${voteUrl}?p=${p.participantId}`;
-      let photoUrl: string | null;
-
-      if (uploadedFilename && uploadedParticipantId === p.participantId) {
-        if (isSupabaseConfigured && supabaseAdmin) {
-          const { data } = supabaseAdmin.storage.from(STORAGE_BUCKET).getPublicUrl(uploadedFilename);
-          photoUrl = data.publicUrl;
-        } else {
-          photoUrl = `/photos/${uploadedFilename}`;
-        }
-      } else {
-        photoUrl = await getParticipantPhotoUrl(p.name);
-      }
-
-      const [qrDataUrl] = await Promise.all([
+      const [qrDataUrl, photoUrl] = await Promise.all([
         QRCode.toDataURL(url, {
           margin: 1, color: { dark: "#4f46e5", light: "#ffffff" }, width: 140,
         }),
+        getParticipantPhotoUrl(p.name),
       ]);
       return { ...p, qrDataUrl, qrUrl: url, photoUrl };
     })

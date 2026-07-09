@@ -109,10 +109,7 @@ export async function POST(
       await writeFile(path.join(photosDir, finalName), bytes);
     }
 
-    const sessionUrl = new URL(`/admin/sessions/${id}`, request.url);
-    sessionUrl.searchParams.set("photo", finalName);
-    sessionUrl.searchParams.set("pid", participantId);
-    return NextResponse.redirect(sessionUrl);
+    return NextResponse.redirect(new URL(`/admin/sessions/${id}`, request.url));
   } catch {
     return NextResponse.redirect(new URL(`/admin/sessions/${id}`, request.url));
   }
