@@ -125,6 +125,9 @@ export default async function SessionResultsPage({
             <Link href="/admin/history" className="card rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-600 hover:text-indigo-600">
               History
             </Link>
+            <Link href="/admin" className="card rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900">
+              Back
+            </Link>
           </div>
         </div>
 
