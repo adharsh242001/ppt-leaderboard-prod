@@ -107,4 +107,6 @@ model Vote {
   @@index([participantId])
   @@index([personId])
   @@index([submissionId])
+  @@index([sessionId, personId])
+  @@index([sessionId, score])
 }
