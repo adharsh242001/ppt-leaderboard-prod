@@ -101,6 +101,13 @@ export default async function SessionPage({
             <Link href="/admin" className="card rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900">
               Back
             </Link>
+            {session.voteCount > 0 && (
+              <form action={`/admin/sessions/${session.id}/reset-votes`} method="post">
+                <button className="card rounded-xl px-3.5 py-2 text-xs font-semibold text-red-400 hover:text-red-600 hover:border-red-200">
+                  Reset
+                </button>
+              </form>
+            )}
           </div>
         </div>
 

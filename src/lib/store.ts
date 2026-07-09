@@ -525,6 +525,139 @@ export function createVoteFingerprint(input: {
   return createHash("sha256").update(raw).digest("hex");
 }
 
+export async function enqueueVote(
+  sessionSlug: string,
+  ratings: Array<{ participantId: string; score: number }>,
+  voterToken: string,
+  voterFingerprint?: string,
+  requestMeta?: {
+    ipAddress?: string;
+    userAgent?: string;
+    acceptLanguage?: string;
+  }
+) {
+  const cleanedRatings = ratings
+    .map((r) => ({
+      participantId: r.participantId,
+      score: Math.max(1, Math.min(10, Math.round(r.score))),
+    }))
+    .filter((r) => Number.isFinite(r.score));
+
+  if (cleanedRatings.length === 0) {
+    throw new Error("No valid ratings submitted.");
+  }
+
+  const session = await prisma.session.findUnique({
+    where: { slug: sessionSlug },
+    select: { id: true, status: true },
+  });
+
+  if (!session) throw new Error("Session not found.");
+  if (session.status !== PrismaSessionStatus.live) {
+    throw new Error("Voting is not open for this session.");
+  }
+
+  const alreadyVoted = await prisma.voteSubmission.findUnique({
+    where: { sessionId_voterToken: { sessionId: session.id, voterToken } },
+    select: { id: true },
+  });
+
+  if (alreadyVoted) {
+    throw new Error("This device has already voted for this session.");
+  }
+
+  const alreadyQueued = await prisma.pendingVote.findFirst({
+    where: { sessionSlug, voterToken },
+    select: { id: true },
+  });
+
+  if (alreadyQueued) {
+    throw new Error("This device has already voted for this session.");
+  }
+
+  await prisma.pendingVote.create({
+    data: {
+      sessionSlug,
+      ratings: JSON.stringify(cleanedRatings),
+      voterToken,
+      voterFingerprint,
+      ipAddress: requestMeta?.ipAddress,
+      userAgent: requestMeta?.userAgent,
+      acceptLanguage: requestMeta?.acceptLanguage,
+    },
+  });
+}
+
+export async function processPendingVotes(batchSize = 10): Promise<number> {
+  const pending = await prisma.pendingVote.findMany({
+    orderBy: { createdAt: "asc" },
+    take: batchSize,
+  });
+
+  let processed = 0;
+
+  for (const item of pending) {
+    try {
+      const ratings: Array<{ participantId: string; score: number }> =
+        JSON.parse(item.ratings);
+
+      await submitVotes(
+        item.sessionSlug,
+        ratings,
+        item.voterToken,
+        item.voterFingerprint ?? undefined,
+        {
+          ipAddress: item.ipAddress ?? undefined,
+          userAgent: item.userAgent ?? undefined,
+          acceptLanguage: item.acceptLanguage ?? undefined,
+        }
+      );
+
+      await prisma.pendingVote.delete({ where: { id: item.id } });
+      processed++;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "";
+
+      if (message.includes("already voted") || message.includes("No valid ratings")) {
+        await prisma.pendingVote.delete({ where: { id: item.id } });
+        processed++;
+        continue;
+      }
+
+      if (item.attempts >= 3) {
+        await prisma.pendingVote.delete({ where: { id: item.id } });
+        processed++;
+        continue;
+      }
+
+      await prisma.pendingVote.update({
+        where: { id: item.id },
+        data: {
+          attempts: { increment: 1 },
+          lastError: message || "Unknown error",
+        },
+      });
+    }
+  }
+
+  return processed;
+}
+
+export async function resetSessionVotes(sessionId: string) {
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: { id: true, slug: true },
+  });
+
+  if (!session) throw new Error("Session not found.");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.vote.deleteMany({ where: { sessionId: session.id } });
+    await tx.voteSubmission.deleteMany({ where: { sessionId: session.id } });
+    await tx.pendingVote.deleteMany({ where: { sessionSlug: session.slug } });
+  });
+}
+
 async function buildLeaderboardRows(
   aggregateRows: Array<{
     personId: string;
