@@ -1,9 +1,15 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
+import { ADMIN_COOKIE_NAME, isValidAdminSession } from "@/lib/auth";
 import { createSession } from "@/lib/store";
 
 export async function POST(request: Request) {
-  await requireAdmin();
+  const cookieStore = await cookies();
+  const token = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
+  if (!(await isValidAdminSession(token))) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   const formData = await request.formData();
   const title = String(formData.get("title") ?? "");
   const session = await createSession(title);
