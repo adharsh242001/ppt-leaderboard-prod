@@ -90,6 +90,22 @@ model VoteSubmission {
   @@index([createdAt])
 }
 
+model PendingVote {
+  id               String   @id @default(cuid())
+  sessionSlug       String
+  ratings           String   // JSON array of {participantId, score}
+  voterToken        String
+  voterFingerprint  String?
+  ipAddress         String?
+  userAgent         String?
+  acceptLanguage    String?
+  createdAt         DateTime @default(now())
+  attempts          Int      @default(0)
+  lastError         String?
+
+  @@index([createdAt])
+}
+
 model Vote {
   id           String          @id @default(cuid())
   sessionId     String
@@ -107,4 +123,6 @@ model Vote {
   @@index([participantId])
   @@index([personId])
   @@index([submissionId])
+  @@index([sessionId, personId])
+  @@index([sessionId, score])
 }

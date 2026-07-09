@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { createVoteFingerprint, submitVotes } from "@/lib/store";
+import { createVoteFingerprint, enqueueVote } from "@/lib/store";
 
 export async function POST(
   request: Request,
@@ -38,7 +38,7 @@ export async function POST(
       acceptLanguage,
     });
 
-    await submitVotes(slug, ratings, voterToken, voterFingerprint, {
+    await enqueueVote(slug, ratings, voterToken, voterFingerprint, {
       ipAddress,
       userAgent,
       acceptLanguage,
