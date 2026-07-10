@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getSessionBySlug } from "@/lib/store";
+import { getParticipantPhotoUrl } from "@/lib/photoMatching";
 
 function VoteFormShell({
   children,
@@ -70,6 +71,11 @@ export default async function VotePage({
 
   const isRetry = retry === "1";
 
+  let singlePhotoUrl: string | null = null;
+  if (targetParticipantId && participants.length === 1) {
+    singlePhotoUrl = await getParticipantPhotoUrl(participants[0].name);
+  }
+
   return (
     <VoteFormShell>
       <div className="flex items-center gap-3 mb-1">
@@ -82,6 +88,14 @@ export default async function VotePage({
       </h1>
       {!targetName && (
         <p className="text-sm text-gray-500 mt-1">Rate each participant from 1 to 10.</p>
+      )}
+
+      {singlePhotoUrl && (
+        <div className="mt-4 flex justify-center">
+          <div className="w-28 h-28 rounded-2xl overflow-hidden shadow-md border-2 border-indigo-200">
+            <img src={singlePhotoUrl} alt={targetName ?? ""} className="w-full h-full object-cover" />
+          </div>
+        </div>
       )}
 
       {isRetry && (

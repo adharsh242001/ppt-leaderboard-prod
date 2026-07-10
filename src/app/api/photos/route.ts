@@ -1,13 +1,21 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
   getPhotoBaseName,
   isSupportedPhotoFile,
 } from "@/lib/photoMatching";
+import { ADMIN_COOKIE_NAME, isValidAdminSession } from "@/lib/auth";
 import { supabaseAdmin, STORAGE_BUCKET, isSupabaseConfigured } from "@/lib/supabase";
 
 type PhotoIndex = Record<string, string>;
 
 export async function GET() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
+  if (!(await isValidAdminSession(token))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   if (!isSupabaseConfigured || !supabaseAdmin) {
     return NextResponse.json({ photos: {} });
   }
